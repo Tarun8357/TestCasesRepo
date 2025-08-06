@@ -1,59 +1,55 @@
-import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
-
-import java.sql.Timestamp;
-import java.util.Arrays;
-
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
-
-public class PersonLockServiceTest {
 
     @Test
-    public void testUpdateLockDetails_ReturnsTrue_WhenUpdateCountGreaterThanZero() {
+    public void testUpdateLockDetails_ReturnsTrue_WhenUpdateCountIsGreaterThanZero() throws Exception {
         // Arrange
+        MergeMessageProcessor processor = new MergeMessageProcessor();
+
+        // Mock personLocksDao
         PersonLocksDao mockDao = mock(PersonLocksDao.class);
-        PersonLockService service = new PersonLockService(mockDao); // assuming DI via constructor
+        injectPrivateField(processor, "personLocksDao", mockDao);
 
-        PersonLockVO oldLock = new PersonLockVO();
-        oldLock.setLockKeyValue("key1");
-        oldLock.setLockTypeCode("TYPE1");
-        oldLock.setFailedKeyAttempt(2);
-        oldLock.setLastFailedKeyTimestamp(new Timestamp(System.currentTimeMillis()));
+        // Create dummy inputs
+        PersonLockVO oldLock = new PersonLockVO("key1", "typeA", 2, new Timestamp(System.currentTimeMillis()));
+        PersonLockVO newLock = new PersonLockVO(1001L);
 
-        PersonLockVO newLock = new PersonLockVO();
-        newLock.setPersonLockId(123L);
+        // Mock DAO behavior
+        when(mockDao.updatePersonLock(anyString(), anyList())).thenReturn(1);
 
-        when(mockDao.updatePersonLock(eq("UPDATE_LOCK_DETAILS"), anyList())).thenReturn(1);
+        // Access private method
+        Method method = MergeMessageProcessor.class.getDeclaredMethod("updateLockDetails", PersonLockVO.class, PersonLockVO.class);
+        method.setAccessible(true);
 
         // Act
-        boolean result = service.updateLockDetails(oldLock, newLock);
+        boolean result = (boolean) method.invoke(processor, oldLock, newLock);
 
         // Assert
         assertTrue(result);
     }
 
     @Test
-    public void testUpdateLockDetails_ReturnsFalse_WhenUpdateCountIsZero() {
+    public void testUpdateLockDetails_ReturnsFalse_WhenUpdateCountIsZero() throws Exception {
         // Arrange
+        MergeMessageProcessor processor = new MergeMessageProcessor();
+
         PersonLocksDao mockDao = mock(PersonLocksDao.class);
-        PersonLockService service = new PersonLockService(mockDao);
+        injectPrivateField(processor, "personLocksDao", mockDao);
 
-        PersonLockVO oldLock = new PersonLockVO();
-        oldLock.setLockKeyValue("key2");
-        oldLock.setLockTypeCode("TYPE2");
-        oldLock.setFailedKeyAttempt(1);
-        oldLock.setLastFailedKeyTimestamp(new Timestamp(System.currentTimeMillis()));
+        PersonLockVO oldLock = new PersonLockVO("key2", "typeB", 0, new Timestamp(System.currentTimeMillis()));
+        PersonLockVO newLock = new PersonLockVO(2002L);
 
-        PersonLockVO newLock = new PersonLockVO();
-        newLock.setPersonLockId(456L);
+        when(mockDao.updatePersonLock(anyString(), anyList())).thenReturn(0);
 
-        when(mockDao.updatePersonLock(eq("UPDATE_LOCK_DETAILS"), anyList())).thenReturn(0);
+        Method method = MergeMessageProcessor.class.getDeclaredMethod("updateLockDetails", PersonLockVO.class, PersonLockVO.class);
+        method.setAccessible(true);
 
-        // Act
-        boolean result = service.updateLockDetails(oldLock, newLock);
+        boolean result = (boolean) method.invoke(processor, oldLock, newLock);
 
-        // Assert
         assertFalse(result);
     }
-}
+
+    // Utility to inject a private field (mocked DAO)
+    private void injectPrivateField(Object target, String fieldName, Object value) throws Exception {
+        Field field = target.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(target, value);
+    }
