@@ -1,50 +1,59 @@
 import org.junit.jupiter.api.Test;
-import org.mockito.MockedStatic;
+import org.mockito.Mockito;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Properties;
+import java.sql.Timestamp;
+import java.util.Arrays;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-public class KafkaConfigTest {
+public class PersonLockServiceTest {
 
     @Test
-    public void testKafkaConfig_FullConfig_ReturnsExpectedProperties() {
+    public void testUpdateLockDetails_ReturnsTrue_WhenUpdateCountGreaterThanZero() {
         // Arrange
-        KafkaConfigBuilder builder = new KafkaConfigBuilder();
-        builder.consumerBootstrapServers = "localhost:9092";
-        builder.consumerSecurityProtocol = "SASL_SSL";
-        builder.consumerSslTruststoreLocation = "/etc/kafka/secrets/truststore.jks";
-        builder.consumerSslTruststoreType = "JKS";
-        builder.consumerSslTruststorePasswordSecret = "truststore-pass";
-        builder.consumerSaslMechanism = "PLAIN";
-        builder.consumerSasJaasConfigUsernameSecret = "username-key";
-        builder.consumerSasJaasConfigPasswordSecret = "password-key";
+        PersonLocksDao mockDao = mock(PersonLocksDao.class);
+        PersonLockService service = new PersonLockService(mockDao); // assuming DI via constructor
 
-        Map<String, String> secrets = new HashMap<>();
-        secrets.put("truststore-pass", "secretPass");
-        secrets.put("username-key", "testUser");
-        secrets.put("password-key", "testPass");
+        PersonLockVO oldLock = new PersonLockVO();
+        oldLock.setLockKeyValue("key1");
+        oldLock.setLockTypeCode("TYPE1");
+        oldLock.setFailedKeyAttempt(2);
+        oldLock.setLastFailedKeyTimestamp(new Timestamp(System.currentTimeMillis()));
 
-        try (MockedStatic<DockerSecretsUtil> dockerSecrets = mockStatic(DockerSecretsUtil.class)) {
-            dockerSecrets.when(DockerSecretsUtil::load).thenReturn(secrets);
+        PersonLockVO newLock = new PersonLockVO();
+        newLock.setPersonLockId(123L);
 
-            // Act
-            Properties props = builder.kafkaConfig();
+        when(mockDao.updatePersonLock(eq("UPDATE_LOCK_DETAILS"), anyList())).thenReturn(1);
 
-            // Assert
-            assertEquals("localhost:9092", props.get("bootstrap.servers"));
-            assertEquals("SASL_SSL", props.get("security.protocol"));
-            assertEquals("/etc/kafka/secrets/truststore.jks", props.get("ssl.truststore.location"));
-            assertEquals("JKS", props.get("ssl.truststore.type"));
-            assertEquals("secretPass", props.get("ssl.truststore.password"));
-            assertEquals("PLAIN", props.get("sasl.mechanism"));
-            assertEquals(
-                "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"testUser\" password=\"testPass\";",
-                props.get("sasl.jaas.config")
-            );
-        }
+        // Act
+        boolean result = service.updateLockDetails(oldLock, newLock);
+
+        // Assert
+        assertTrue(result);
+    }
+
+    @Test
+    public void testUpdateLockDetails_ReturnsFalse_WhenUpdateCountIsZero() {
+        // Arrange
+        PersonLocksDao mockDao = mock(PersonLocksDao.class);
+        PersonLockService service = new PersonLockService(mockDao);
+
+        PersonLockVO oldLock = new PersonLockVO();
+        oldLock.setLockKeyValue("key2");
+        oldLock.setLockTypeCode("TYPE2");
+        oldLock.setFailedKeyAttempt(1);
+        oldLock.setLastFailedKeyTimestamp(new Timestamp(System.currentTimeMillis()));
+
+        PersonLockVO newLock = new PersonLockVO();
+        newLock.setPersonLockId(456L);
+
+        when(mockDao.updatePersonLock(eq("UPDATE_LOCK_DETAILS"), anyList())).thenReturn(0);
+
+        // Act
+        boolean result = service.updateLockDetails(oldLock, newLock);
+
+        // Assert
+        assertFalse(result);
     }
 }
