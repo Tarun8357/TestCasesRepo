@@ -1,53 +1,77 @@
-
-    @Test
-    public void testUpdateLockDetails_ReturnsTrue_WhenUpdateCountIsGreaterThanZero() throws Exception {
+@Test
+    public void testUpdatePersonsData_WhenPersonHistoryListIsNull_ShouldReturnFalse() throws Exception {
         // Arrange
         MergeMessageProcessor processor = new MergeMessageProcessor();
 
-        // Mock personLocksDao
-        PersonLocksDao mockDao = mock(PersonLocksDao.class);
-        injectPrivateField(processor, "personLocksDao", mockDao);
+        // Mock dependencies
+        PersonLockHistoryDao mockHistoryDao = mock(PersonLockHistoryDao.class);
+        PersonLocksDao mockLocksDao = mock(PersonLocksDao.class);
+        UsageLog mockUsageLog = mock(UsageLog.class);
 
-        // Create dummy inputs
-        PersonLockVO oldLock = new PersonLockVO("key1", "typeA", 2, new Timestamp(System.currentTimeMillis()));
-        PersonLockVO newLock = new PersonLockVO(1001L);
+        injectPrivateField(processor, "personLockHistoryDao", mockHistoryDao);
+        injectPrivateField(processor, "personLocksDao", mockLocksDao);
+        injectPrivateField(processor, "usageLog", mockUsageLog);
 
-        // Mock DAO behavior
-        when(mockDao.updatePersonLock(anyString(), anyList())).thenReturn(1);
+        // Prepare input
+        PersonsRequestData mockRequest = mock(PersonsRequestData.class);
+        when(mockRequest.getUdpid()).thenReturn("NEW-UDP");
+        when(mockRequest.getNmlzclientid()).thenReturn("NEW-CLIENT");
+        when(mockRequest.getOldudpid()).thenReturn("OLD-UDP");
+        when(mockRequest.getOldnmlzclientid()).thenReturn("OLD-CLIENT");
 
-        // Access private method
-        Method method = MergeMessageProcessor.class.getDeclaredMethod("updateLockDetails", PersonLockVO.class, PersonLockVO.class);
+        when(mockHistoryDao.getPersonLockHistoryList("OLD-UDP", "OLD-CLIENT")).thenReturn(null);
+
+        // Access private method via reflection
+        Method method = MergeMessageProcessor.class.getDeclaredMethod(
+                "updatePersonsData", PersonsRequestData.class, PersonLockVO.class, String.class);
         method.setAccessible(true);
 
         // Act
-        boolean result = (boolean) method.invoke(processor, oldLock, newLock);
+        boolean result = (boolean) method.invoke(processor, mockRequest, null, "someKey");
 
         // Assert
-        assertTrue(result);
-    }
-
-    @Test
-    public void testUpdateLockDetails_ReturnsFalse_WhenUpdateCountIsZero() throws Exception {
-        // Arrange
-        MergeMessageProcessor processor = new MergeMessageProcessor();
-
-        PersonLocksDao mockDao = mock(PersonLocksDao.class);
-        injectPrivateField(processor, "personLocksDao", mockDao);
-
-        PersonLockVO oldLock = new PersonLockVO("key2", "typeB", 0, new Timestamp(System.currentTimeMillis()));
-        PersonLockVO newLock = new PersonLockVO(2002L);
-
-        when(mockDao.updatePersonLock(anyString(), anyList())).thenReturn(0);
-
-        Method method = MergeMessageProcessor.class.getDeclaredMethod("updateLockDetails", PersonLockVO.class, PersonLockVO.class);
-        method.setAccessible(true);
-
-        boolean result = (boolean) method.invoke(processor, oldLock, newLock);
-
         assertFalse(result);
     }
 
-    // Utility to inject a private field (mocked DAO)
+    @Test
+    public void testUpdatePersonsData_WhenPersonHistoryListIsNotNull_ShouldEnterLoop() throws Exception {
+        // Arrange
+        MergeMessageProcessor processor = new MergeMessageProcessor();
+
+        PersonLockHistoryDao mockHistoryDao = mock(PersonLockHistoryDao.class);
+        PersonLocksDao mockLocksDao = mock(PersonLocksDao.class);
+        UsageLog mockUsageLog = mock(UsageLog.class);
+
+        injectPrivateField(processor, "personLockHistoryDao", mockHistoryDao);
+        injectPrivateField(processor, "personLocksDao", mockLocksDao);
+        injectPrivateField(processor, "usageLog", mockUsageLog);
+
+        // Prepare input
+        PersonsRequestData mockRequest = mock(PersonsRequestData.class);
+        when(mockRequest.getUdpid()).thenReturn("NEW-UDP");
+        when(mockRequest.getNmlzclientid()).thenReturn("NEW-CLIENT");
+        when(mockRequest.getOldudpid()).thenReturn("OLD-UDP");
+        when(mockRequest.getOldnmlzclientid()).thenReturn("OLD-CLIENT");
+
+        PersonLockVO historyItem = new PersonLockVO(101L);
+        when(mockHistoryDao.getPersonLockHistoryList("OLD-UDP", "OLD-CLIENT"))
+                .thenReturn(List.of(historyItem));
+
+        when(mockLocksDao.updatePersonLock(anyString(), anyList())).thenReturn(1);
+
+        // Access private method
+        Method method = MergeMessageProcessor.class.getDeclaredMethod(
+                "updatePersonsData", PersonsRequestData.class, PersonLockVO.class, String.class);
+        method.setAccessible(true);
+
+        // Act
+        boolean result = (boolean) method.invoke(processor, mockRequest, null, "someKey");
+
+        // Assert
+        assertTrue(result); // Based on updateCount > 0 → isUpdated = true
+    }
+
+    // Helper to inject private fields
     private void injectPrivateField(Object target, String fieldName, Object value) throws Exception {
         Field field = target.getClass().getDeclaredField(fieldName);
         field.setAccessible(true);
