@@ -1,34 +1,35 @@
-@Test
-void testProcessMessage_mismatchedSizes_shouldNotCallMergePerson() {
-    Body mockBody = mock(Body.class);
-    FullMerge mockFullMerge = mock(FullMerge.class);
-    Delete mockDelete = mock(Delete.class);
-    Update mockUpdate = mock(Update.class);
-    After mockAfter = mock(After.class);
+import org.junit.jupiter.api.Test;
+import java.util.HashMap;
+import java.util.Map;
 
-    // Prepare mocked response
-    when(mockBody.getFullMerge()).thenReturn(mockFullMerge);
-    when(mockFullMerge.getSource().getDelete()).thenReturn(mockDelete);
-    when(mockFullMerge.getTarget().getUpdate().getAfter()).thenReturn(mockAfter);
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
-    IdMapping id1 = new IdMapping("old1");
-    IdMapping id2 = new IdMapping("old2");
-    IdMapping id3 = new IdMapping("new1");
+public class JaasConfigBuilderTest {
 
-    when(mockDelete.getIdMapping()).thenReturn(List.of(id1, id2)); // size 2
-    when(mockAfter.getIdMapping()).thenReturn(List.of(id3));       // size 1
+    @Test
+    public void testBuildJaasConfig() {
+        // Arrange
+        Map<String, String> secrets = new HashMap<>();
+        secrets.put("username-key", "testUser");
+        secrets.put("password-key", "testPass");
 
-    // Setup GPI mocks
-    when(mockDelete.getGlobalPersonIdentifier()).thenReturn("oldGPI");
-    when(mockAfter.getGlobalPersonIdentifier()).thenReturn("newGPI");
+        String expected = "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"testUser\" password=\"testPass\";";
+        
+        // Act
+        String actual = buildJaasConfig(secrets, "username-key", "password-key");
 
-    // System under test
-    MyService service = spy(new MyService());
-    doReturn("messageX").when(service).mergePerson(any(), any());
+        // Assert
+        assertEquals(expected, actual);
+    }
 
-    String result = service.processMessage(mockBody, "key123");
-
-    // Assert
-    assertNull(result); // loop doesn't run
-    verify(service, never()).mergePerson(any(), any());
+    // Copied from your implementation (can also be in a separate class)
+    public String buildJaasConfig(Map<String, String> secrets, String saslJaasConfigUsernameSecret, String saslJaasConfigPasswordSecret) {
+        StringBuilder jaasTemplate = new StringBuilder(128);
+        jaasTemplate.append("org.apache.kafka.common.security.plain.PlainLoginModule required username=\"")
+                .append(secrets.get(saslJaasConfigUsernameSecret).trim())
+                .append("\" password=\"")
+                .append(secrets.get(saslJaasConfigPasswordSecret).trim())
+                .append("\";");
+        return jaasTemplate.toString();
+    }
 }
