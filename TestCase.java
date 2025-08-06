@@ -91,3 +91,62 @@
             }
         }
     }
+
+
+
+
+
+    888888888888888888888888888888888888888888888888888888888888888888888
+
+    private void setPrivateField(Object target, String fieldName, Object value) throws Exception {
+    Field field = target.getClass().getDeclaredField(fieldName);
+    field.setAccessible(true);
+    field.set(target, value);
+}
+
+
+@Test
+public void testIsUpdated_AllGreaterThanZero_ShouldReturnTrue() throws Exception {
+    // Spy on real object
+    MergeMessageProcessor processor = spy(new MergeMessageProcessor());
+
+    // Inject dependencies
+    PersonLocksDao mockLocksDao = mock(PersonLocksDao.class);
+    PersonLockHistoryDao mockHistoryDao = mock(PersonLockHistoryDao.class);
+    UsageLog mockUsageLog = mock(UsageLog.class);
+
+    setPrivateField(processor, "personLocksDao", mockLocksDao);
+    setPrivateField(processor, "personLockHistoryDao", mockHistoryDao);
+    setPrivateField(processor, "usageLog", mockUsageLog);
+
+    // Setup mocks
+    when(mockHistoryDao.getPersonLockHistoryList(anyString(), anyString()))
+        .thenReturn(List.of(new PersonLockVO(1L)));
+
+    when(mockLocksDao.updatePersonLock(eq("UPDATE_UDP_AND_CLIENT_ID_HISTORY"), anyList()))
+        .thenReturn(1); // updateHistoryCount
+
+    when(mockLocksDao.updatePersonLock(eq("UPDATE_UDP_AND_CLIENT_ID"), anyList()))
+        .thenReturn(1); // updateCount
+
+    // Spy on insertUsageCode method to return 1
+    doReturn(1).when(processor).insertUsageCode(any(), any(), any());
+
+    // Create inputs
+    PersonsRequestData mockRequest = mock(PersonsRequestData.class);
+    when(mockRequest.getUdpid()).thenReturn("UDP1");
+    when(mockRequest.getNmlzclientid()).thenReturn("CLNT1");
+    when(mockRequest.getOldudpid()).thenReturn("OLD_UDP");
+    when(mockRequest.getOldnmlzclientid()).thenReturn("OLD_CLNT");
+
+    PersonLockVO oldLock = new PersonLockVO(99L);
+
+    // Reflect and call the method
+    Method method = MergeMessageProcessor.class.getDeclaredMethod("updatePersonsData",
+            PersonsRequestData.class, PersonLockVO.class, String.class);
+    method.setAccessible(true);
+
+    boolean result = (boolean) method.invoke(processor, mockRequest, oldLock, "testKey");
+    assertTrue(result);
+}
+
