@@ -1,152 +1,85 @@
-    private MergeMessageProcessor setupProcessor(int updateCount, int insertCount, int updateHistoryCount) throws Exception {
-        MergeMessageProcessor processor = new MergeMessageProcessor();
+@Test
+public void testProcessMessage_WhenListSizesMatch_ShouldCallMergePerson() {
+    // Arrange
+    MergeMessageProcessor processor = spy(new MergeMessageProcessor());
 
-        // Mocks
-        PersonLockHistoryDao mockHistoryDao = mock(PersonLockHistoryDao.class);
-        PersonLocksDao mockLocksDao = mock(PersonLocksDao.class);
-        UsageLog mockUsageLog = mock(UsageLog.class);
+    Body mockBody = mock(Body.class);
+    FullMerge mockFullMerge = mock(FullMerge.class);
+    Source mockSource = mock(Source.class);
+    Target mockTarget = mock(Target.class);
+    Update mockUpdate = mock(Update.class);
+    Delete mockDelete = mock(Delete.class);
+    After mockAfter = mock(After.class);
 
-        injectPrivateField(processor, "personLockHistoryDao", mockHistoryDao);
-        injectPrivateField(processor, "personLocksDao", mockLocksDao);
-        injectPrivateField(processor, "usageLog", mockUsageLog);
+    IdMapping mapping1 = new IdMapping("CLIENT_1");
+    IdMapping mapping2 = new IdMapping("CLIENT_2");
 
-        // Mock personHistoryList with one item
-        PersonLockVO historyItem = new PersonLockVO(1L);
-        when(mockHistoryDao.getPersonLockHistoryList(anyString(), anyString()))
-                .thenReturn(List.of(historyItem));
+    // Setup
+    when(mockBody.getFullMerge()).thenReturn(mockFullMerge);
+    when(mockFullMerge.getSource()).thenReturn(mockSource);
+    when(mockSource.getDelete()).thenReturn(mockDelete);
+    when(mockDelete.getGlobalPersonIdentifier()).thenReturn("OLD_ID");
+    when(mockDelete.getIdMapping()).thenReturn(List.of(mapping1, mapping2));
 
-        // Mock update of history
-        when(mockLocksDao.updatePersonLock(eq("UPDATE_UDP_AND_CLIENT_ID_HISTORY"), anyList()))
-                .thenReturn(updateHistoryCount);
+    when(mockFullMerge.getTarget()).thenReturn(mockTarget);
+    when(mockTarget.getUpdate()).thenReturn(mockUpdate);
+    when(mockUpdate.getAfter()).thenReturn(mockAfter);
+    when(mockAfter.getGlobalPersonIdentifier()).thenReturn("NEW_ID");
+    when(mockAfter.getIdMapping()).thenReturn(List.of(
+            new IdMapping("CLIENT_1_NEW"),
+            new IdMapping("CLIENT_2_NEW")
+    ));
 
-        // Mock update of oldPersonLock
-        when(mockLocksDao.updatePersonLock(eq("UPDATE_UDP_AND_CLIENT_ID"), anyList()))
-                .thenReturn(updateCount);
+    doReturn("merged").when(processor).mergePerson(any(), any());
 
-        // Hardcoded insertCount via mocked insertUsageCode (simulate behavior)
-        injectPrivateField(processor, "insertCount", insertCount); // Simulated
+    // Act
+    String result = processor.processMessage(mockBody, "key123");
 
-        return processor;
-    }
-
-    @Test
-    public void testIsUpdated_AllGreaterThanZero_ShouldReturnTrue() throws Exception {
-        MergeMessageProcessor processor = setupProcessor(1, 1, 1);
-        boolean result = invokeUpdatePersonsData(processor);
-        assertTrue(result);
-    }
-
-    @Test
-    public void testIsUpdated_UpdateCountZero_ShouldReturnFalse() throws Exception {
-        MergeMessageProcessor processor = setupProcessor(0, 1, 1);
-        boolean result = invokeUpdatePersonsData(processor);
-        assertFalse(result);
-    }
-
-    @Test
-    public void testIsUpdated_TwoZero_ShouldReturnFalse() throws Exception {
-        MergeMessageProcessor processor = setupProcessor(0, 1, 0);
-        boolean result = invokeUpdatePersonsData(processor);
-        assertFalse(result);
-    }
-
-    @Test
-    public void testIsUpdated_AllZero_ShouldReturnFalse() throws Exception {
-        MergeMessageProcessor processor = setupProcessor(0, 0, 0);
-        boolean result = invokeUpdatePersonsData(processor);
-        assertFalse(result);
-    }
-
-    private boolean invokeUpdatePersonsData(MergeMessageProcessor processor) throws Exception {
-        // Create a mock request
-        PersonsRequestData mockRequest = mock(PersonsRequestData.class);
-        when(mockRequest.getUdpid()).thenReturn("UDP1");
-        when(mockRequest.getNmlzclientid()).thenReturn("CLNT1");
-        when(mockRequest.getOldudpid()).thenReturn("OLD_UDP");
-        when(mockRequest.getOldnmlzclientid()).thenReturn("OLD_CLNT");
-
-        PersonLockVO oldLock = new PersonLockVO(99L);
-
-        // Reflect and call the method
-        Method method = MergeMessageProcessor.class.getDeclaredMethod("updatePersonsData",
-                PersonsRequestData.class, PersonLockVO.class, String.class);
-        method.setAccessible(true);
-
-        return (boolean) method.invoke(processor, mockRequest, oldLock, "testKey");
-    }
-
-    private void injectPrivateField(Object target, String fieldName, Object value) throws Exception {
-        try {
-            Field field = target.getClass().getDeclaredField(fieldName);
-            field.setAccessible(true);
-            field.set(target, value);
-        } catch (NoSuchFieldException e) {
-            // Simulate insertUsageCode result
-            if ("insertCount".equals(fieldName)) {
-                Method m = target.getClass().getDeclaredMethod("setInsertCountForTest", int.class);
-                m.setAccessible(true);
-                m.invoke(target, value);
-            } else {
-                throw e;
-            }
-        }
-    }
-
-
-
-
-
-    888888888888888888888888888888888888888888888888888888888888888888888
-
-    private void setPrivateField(Object target, String fieldName, Object value) throws Exception {
-    Field field = target.getClass().getDeclaredField(fieldName);
-    field.setAccessible(true);
-    field.set(target, value);
+    // Assert
+    assertEquals("merged", result);
+    verify(processor, times(2)).mergePerson(any(), eq("key123")); // Called twice for 2 mappings
 }
+
 
 
 @Test
-public void testIsUpdated_AllGreaterThanZero_ShouldReturnTrue() throws Exception {
-    // Spy on real object
+public void testProcessMessage_WhenListSizesDiffer_ShouldNotCallMergePerson() {
+    // Arrange
     MergeMessageProcessor processor = spy(new MergeMessageProcessor());
 
-    // Inject dependencies
-    PersonLocksDao mockLocksDao = mock(PersonLocksDao.class);
-    PersonLockHistoryDao mockHistoryDao = mock(PersonLockHistoryDao.class);
-    UsageLog mockUsageLog = mock(UsageLog.class);
+    Body mockBody = mock(Body.class);
+    FullMerge mockFullMerge = mock(FullMerge.class);
+    Source mockSource = mock(Source.class);
+    Target mockTarget = mock(Target.class);
+    Update mockUpdate = mock(Update.class);
+    Delete mockDelete = mock(Delete.class);
+    After mockAfter = mock(After.class);
 
-    setPrivateField(processor, "personLocksDao", mockLocksDao);
-    setPrivateField(processor, "personLockHistoryDao", mockHistoryDao);
-    setPrivateField(processor, "usageLog", mockUsageLog);
+    IdMapping mapping1 = new IdMapping("CLIENT_1");
 
-    // Setup mocks
-    when(mockHistoryDao.getPersonLockHistoryList(anyString(), anyString()))
-        .thenReturn(List.of(new PersonLockVO(1L)));
+    // Setup
+    when(mockBody.getFullMerge()).thenReturn(mockFullMerge);
+    when(mockFullMerge.getSource()).thenReturn(mockSource);
+    when(mockSource.getDelete()).thenReturn(mockDelete);
+    when(mockDelete.getGlobalPersonIdentifier()).thenReturn("OLD_ID");
+    when(mockDelete.getIdMapping()).thenReturn(List.of(mapping1));
 
-    when(mockLocksDao.updatePersonLock(eq("UPDATE_UDP_AND_CLIENT_ID_HISTORY"), anyList()))
-        .thenReturn(1); // updateHistoryCount
+    when(mockFullMerge.getTarget()).thenReturn(mockTarget);
+    when(mockTarget.getUpdate()).thenReturn(mockUpdate);
+    when(mockUpdate.getAfter()).thenReturn(mockAfter);
+    when(mockAfter.getGlobalPersonIdentifier()).thenReturn("NEW_ID");
+    when(mockAfter.getIdMapping()).thenReturn(List.of(
+            new IdMapping("CLIENT_1_NEW"),
+            new IdMapping("CLIENT_2_NEW")
+    )); // Size mismatch: 1 vs 2
 
-    when(mockLocksDao.updatePersonLock(eq("UPDATE_UDP_AND_CLIENT_ID"), anyList()))
-        .thenReturn(1); // updateCount
+    // Act
+    String result = processor.processMessage(mockBody, "key123");
 
-    // Spy on insertUsageCode method to return 1
-    doReturn(1).when(processor).insertUsageCode(any(), any(), any());
-
-    // Create inputs
-    PersonsRequestData mockRequest = mock(PersonsRequestData.class);
-    when(mockRequest.getUdpid()).thenReturn("UDP1");
-    when(mockRequest.getNmlzclientid()).thenReturn("CLNT1");
-    when(mockRequest.getOldudpid()).thenReturn("OLD_UDP");
-    when(mockRequest.getOldnmlzclientid()).thenReturn("OLD_CLNT");
-
-    PersonLockVO oldLock = new PersonLockVO(99L);
-
-    // Reflect and call the method
-    Method method = MergeMessageProcessor.class.getDeclaredMethod("updatePersonsData",
-            PersonsRequestData.class, PersonLockVO.class, String.class);
-    method.setAccessible(true);
-
-    boolean result = (boolean) method.invoke(processor, mockRequest, oldLock, "testKey");
-    assertTrue(result);
+    // Assert
+    assertNull(result);
+    verify(processor, never()).mergePerson(any(), any());
 }
+
+
 
