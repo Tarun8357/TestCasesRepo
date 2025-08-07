@@ -1,37 +1,44 @@
 @Test
-void testMergePerson_Scenario4_InsertCountZero_ShouldReturnNotSuccess() {
-    // Arrange
+public void testScenario4_insertCountPositive_deleteRecordsTrue_shouldReturnTrue() throws Exception {
     MergeMessageProcessor processor = new MergeMessageProcessor();
 
-    PersonsRequestData request = new PersonsRequestData();
-    request.setUdpid("NEW_ID");
-    request.setNmlzclientid("NEW_CLIENT_ID");
-    request.setOldudpid("OLD_ID");
-    request.setOldnmlzclientid("OLD_CLIENT_ID");
+    PersonLockVO oldLock = new PersonLockVO();
+    oldLock.setRowChangeTimestamp(Timestamp.valueOf("2023-01-01 00:00:00"));
 
-    PersonLockVO oldPersonLock = mock(PersonLockVO.class);
-    PersonLockVO newPersonLock = mock(PersonLockVO.class);
+    PersonLockVO newLock = new PersonLockVO();
+    newLock.setRowChangeTimestamp(Timestamp.valueOf("2023-02-01 00:00:00"));
 
-    when(oldPersonLock.getRowChangeTimestamp()).thenReturn(Timestamp.valueOf("2022-01-01 10:00:00"));
-    when(newPersonLock.getRowChangeTimestamp()).thenReturn(Timestamp.valueOf("2023-01-01 10:00:00"));
+    // Mocks
+    MergeMessageProcessor spy = Mockito.spy(processor);
+    Mockito.doReturn(1).when(spy).insertUsageCode(Mockito.eq(oldLock), Mockito.anyString(), Mockito.anyString());
 
-    PersonLocksDao locksDao = mock(PersonLocksDao.class);
-    DeleteMessageProcessor deleteProcessor = mock(DeleteMessageProcessor.class);
-    ValidationUtil validationUtil = mock(ValidationUtil.class);
+    DeleteMessageProcessor deleteMock = Mockito.mock(DeleteMessageProcessor.class);
+    Mockito.when(deleteMock.deleteRecords(oldLock)).thenReturn(true);
 
-    when(validationUtil.insertPersonLockUsage(oldPersonLock, Constants.UDP_MERGE, "mergeKey")).thenReturn(0); // insertCount = 0
+    // Inject mock
+    Field deleteField = MergeMessageProcessor.class.getDeclaredField("deleteMessageProcessor");
+    deleteField.setAccessible(true);
+    deleteField.set(spy, deleteMock);
 
-    // Inject dependencies
-    injectPrivateField(processor, "personLocksDao", locksDao);
-    injectPrivateField(processor, "deleteMessageProcessor", deleteProcessor);
-    injectPrivateField(processor, "validationUtil", validationUtil);
+    // Invoke private method using reflection
+    Method method = MergeMessageProcessor.class.getDeclaredMethod("mergePerson", PersonsRequestData.class, String.class);
+    method.setAccessible(true);
 
-    when(locksDao.getPersonLock("NEW_ID", "NEW_CLIENT_ID")).thenReturn(newPersonLock);
-    when(locksDao.getPersonLock("OLD_ID", "OLD_CLIENT_ID")).thenReturn(oldPersonLock);
+    // Setup input
+    PersonsRequestData req = new PersonsRequestData();
+    req.setUdpid("NEW_ID");
+    req.setNmlzclientid("NEW_CLIENT");
+    req.setOldudpid("OLD_ID");
+    req.setOldnmlzclientid("OLD_CLIENT");
 
-    // Act
-    String result = processor.mergePerson(request, "mergeKey");
+    // Mock DAO
+    PersonLocksDao dao = Mockito.mock(PersonLocksDao.class);
+    Field daoField = MergeMessageProcessor.class.getDeclaredField("personLocksDao");
+    daoField.setAccessible(true);
+    daoField.set(spy, dao);
+    Mockito.when(dao.getPersonLock("NEW_ID", "NEW_CLIENT")).thenReturn(newLock);
+    Mockito.when(dao.getPersonLock("OLD_ID", "OLD_CLIENT")).thenReturn(oldLock);
 
-    // Assert
-    assertEquals(Constants.LOCK_NOT_EXISTS, result); // Expected fallback response
+    String result = (String) method.invoke(spy, req, "testKey");
+    assertEquals(Constants.OK, result);
 }
