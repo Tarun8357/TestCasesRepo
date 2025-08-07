@@ -1,27 +1,37 @@
 @Test
-void testUpdateLockDetails_ShouldReturnTrue_WhenUpdateCountIsGreaterThanZero() throws Exception {
+void testMergePerson_Scenario4_InsertCountZero_ShouldReturnNotSuccess() {
+    // Arrange
     MergeMessageProcessor processor = new MergeMessageProcessor();
-    
-    PersonLockVO oldLock = mock(PersonLockVO.class);
-    PersonLockVO newLock = mock(PersonLockVO.class);
-    
-    when(oldLock.getLockKeyValue()).thenReturn("key");
-    when(oldLock.getLockTypeCode()).thenReturn("type");
-    when(oldLock.getFailedKeyAttempt()).thenReturn(1);
-    when(oldLock.getLastFailedKeyTimestamp()).thenReturn(Timestamp.valueOf("2023-01-01 00:00:00"));
-    when(newLock.getPersonLockId()).thenReturn(123L);
 
-    PersonLocksDao mockDao = mock(PersonLocksDao.class);
-    when(mockDao.updatePersonLock(anyString(), anyList())).thenReturn(1);
-    
-    Field daoField = MergeMessageProcessor.class.getDeclaredField("personLocksDao");
-    daoField.setAccessible(true);
-    daoField.set(processor, mockDao);
+    PersonsRequestData request = new PersonsRequestData();
+    request.setUdpid("NEW_ID");
+    request.setNmlzclientid("NEW_CLIENT_ID");
+    request.setOldudpid("OLD_ID");
+    request.setOldnmlzclientid("OLD_CLIENT_ID");
 
-    Method method = MergeMessageProcessor.class.getDeclaredMethod("updateLockDetails", PersonLockVO.class, PersonLockVO.class);
-    method.setAccessible(true);
+    PersonLockVO oldPersonLock = mock(PersonLockVO.class);
+    PersonLockVO newPersonLock = mock(PersonLockVO.class);
 
-    boolean result = (boolean) method.invoke(processor, oldLock, newLock);
+    when(oldPersonLock.getRowChangeTimestamp()).thenReturn(Timestamp.valueOf("2022-01-01 10:00:00"));
+    when(newPersonLock.getRowChangeTimestamp()).thenReturn(Timestamp.valueOf("2023-01-01 10:00:00"));
 
-    assertTrue(result);
+    PersonLocksDao locksDao = mock(PersonLocksDao.class);
+    DeleteMessageProcessor deleteProcessor = mock(DeleteMessageProcessor.class);
+    ValidationUtil validationUtil = mock(ValidationUtil.class);
+
+    when(validationUtil.insertPersonLockUsage(oldPersonLock, Constants.UDP_MERGE, "mergeKey")).thenReturn(0); // insertCount = 0
+
+    // Inject dependencies
+    injectPrivateField(processor, "personLocksDao", locksDao);
+    injectPrivateField(processor, "deleteMessageProcessor", deleteProcessor);
+    injectPrivateField(processor, "validationUtil", validationUtil);
+
+    when(locksDao.getPersonLock("NEW_ID", "NEW_CLIENT_ID")).thenReturn(newPersonLock);
+    when(locksDao.getPersonLock("OLD_ID", "OLD_CLIENT_ID")).thenReturn(oldPersonLock);
+
+    // Act
+    String result = processor.mergePerson(request, "mergeKey");
+
+    // Assert
+    assertEquals(Constants.LOCK_NOT_EXISTS, result); // Expected fallback response
 }
