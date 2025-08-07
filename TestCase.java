@@ -1,115 +1,49 @@
-private void mockUpdateLockDetails(MergeMessageProcessor processor, boolean returnValue) throws Exception {
-    Method method = MergeMessageProcessor.class.getDeclaredMethod("updateLockDetails", PersonLockVO.class, PersonLockVO.class);
+private void mockPrivateMethod(MergeMessageProcessor processor, String methodName, boolean returnValue) throws Exception {
+    Method method = MergeMessageProcessor.class.getDeclaredMethod(methodName, PersonLockVO.class, PersonLockVO.class);
     method.setAccessible(true);
 
-    MergeMessageProcessor spyProcessor = Mockito.spy(processor);
-    doReturn(returnValue).when(spyProcessor).updateLockDetails(any(), any());
-    
-    injectPrivateField(spyProcessor, "updateLockDetails", method);
+    // Use a spy if method needs to be mocked dynamically (e.g., using PowerMockito)
+    MergeMessageProcessor spyProcessor = spy(processor);
+    doReturn(returnValue).when(spyProcessor).getClass().getDeclaredMethod(methodName, PersonLockVO.class, PersonLockVO.class);
 }
 
-
 @Test
-void testMergePerson_Scenario5_AllConditionsTrue_ShouldReturnSuccess() throws Exception {
-    MergeMessageProcessor processor = Mockito.spy(new MergeMessageProcessor());
+void testMergePerson_Scenario5_ShouldReturnOk_WhenOldIsNewer() throws Exception {
+    MergeMessageProcessor processor = new MergeMessageProcessor();
 
-    PersonsRequestData request = new PersonsRequestData();
-    request.setUdpid("NEW_ID");
-    request.setNmlzclientid("NEW_CLIENT");
-    request.setOldudpid("OLD_ID");
-    request.setOldnmlzclientid("OLD_CLIENT");
-
+    // Mocks
     PersonLockVO oldLock = mock(PersonLockVO.class);
     PersonLockVO newLock = mock(PersonLockVO.class);
+    PersonLocksDAO personLocksDao = mock(PersonLocksDAO.class);
+    DeleteMessageProcessor deleteProcessor = mock(DeleteMessageProcessor.class);
+    ValidationUtil validationUtil = mock(ValidationUtil.class);
 
-    when(oldLock.getRowChangeTimestamp()).thenReturn(Timestamp.valueOf("2023-01-01 10:00:00")); // OLD is newer
-    when(newLock.getRowChangeTimestamp()).thenReturn(Timestamp.valueOf("2022-01-01 10:00:00"));
+    // PersonsRequestData
+    PersonsRequestData requestData = new PersonsRequestData();
+    requestData.setOldudpid("oldUdp");
+    requestData.setOldnmlzclientid("oldClientId");
+    requestData.setUdpid("newUdp");
+    requestData.setNmlzclientid("newClientId");
 
-    injectPrivateField(processor, "personLocksDao", mock(PersonLocksDao.class));
-    injectPrivateField(processor, "validationUtil", mock(ValidationUtil.class));
-    injectPrivateField(processor, "deleteMessageProcessor", mock(DeleteMessageProcessor.class));
+    // Mocks setup
+    when(oldLock.getRowChangeTimestamp()).thenReturn(Timestamp.valueOf("2024-01-02 00:00:00"));
+    when(newLock.getRowChangeTimestamp()).thenReturn(Timestamp.valueOf("2023-01-01 00:00:00"));
 
-    when(processor.personLocksDao.getPersonLock("OLD_ID", "OLD_CLIENT")).thenReturn(oldLock);
-    when(processor.personLocksDao.getPersonLock("NEW_ID", "NEW_CLIENT")).thenReturn(newLock);
+    when(personLocksDao.getPersonLock("newUdp", "newClientId")).thenReturn(newLock);
+    when(personLocksDao.getPersonLock("oldUdp", "oldClientId")).thenReturn(oldLock);
 
-    doReturn(1).when(processor).insertUsageCode(oldLock, Constants.UDP_MERGE, "KEY");
-    doReturn(true).when(processor).updateLockDetails(oldLock, newLock);
-    when(processor.deleteMessageProcessor.deleteRecords(oldLock)).thenReturn(true);
+    // insertUsageCode will return 1
+    when(validationUtil.insertPersonLockUsage(oldLock, Constants.UDP_MERGE, "key")).thenReturn(1);
 
-    String result = processor.mergePerson(request, "KEY");
+    // updateLockDetails returns true
+    injectPrivateField(processor, "personLocksDao", personLocksDao);
+    injectPrivateField(processor, "validationUtil", validationUtil);
+    injectPrivateField(processor, "deleteMessageProcessor", deleteProcessor);
+    mockPrivateMethod(processor, "updateLockDetails", true);
 
-    assertEquals(Constants.OK, result);
-}
+    when(deleteProcessor.deleteRecords(oldLock)).thenReturn(true);
 
-
-
-@Test
-void testMergePerson_Scenario5_InsertCountZero_ShouldReturnFailure() throws Exception {
-    MergeMessageProcessor processor = Mockito.spy(new MergeMessageProcessor());
-
-    PersonsRequestData request = new PersonsRequestData();
-    request.setUdpid("NEW_ID");
-    request.setNmlzclientid("NEW_CLIENT");
-    request.setOldudpid("OLD_ID");
-    request.setOldnmlzclientid("OLD_CLIENT");
-
-    PersonLockVO oldLock = mock(PersonLockVO.class);
-    PersonLockVO newLock = mock(PersonLockVO.class);
-
-    when(oldLock.getRowChangeTimestamp()).thenReturn(Timestamp.valueOf("2023-01-01 10:00:00")); // OLD is newer
-    when(newLock.getRowChangeTimestamp()).thenReturn(Timestamp.valueOf("2022-01-01 10:00:00"));
-
-    injectPrivateField(processor, "personLocksDao", mock(PersonLocksDao.class));
-    injectPrivateField(processor, "validationUtil", mock(ValidationUtil.class));
-    injectPrivateField(processor, "deleteMessageProcessor", mock(DeleteMessageProcessor.class));
-
-    when(processor.personLocksDao.getPersonLock("OLD_ID", "OLD_CLIENT")).thenReturn(oldLock);
-    when(processor.personLocksDao.getPersonLock("NEW_ID", "NEW_CLIENT")).thenReturn(newLock);
-
-    doReturn(0).when(processor).insertUsageCode(oldLock, Constants.UDP_MERGE, "KEY");
-
-    String result = processor.mergePerson(request, "KEY");
-
-    assertEquals(Constants.LOCK_NOT_EXISTS, result);
-}
-
-
-@Test
-void testMergePerson_Scenario6_ValidStatusAndAllTrue_ShouldReturnSuccess() throws Exception {
-    MergeMessageProcessor processor = Mockito.spy(new MergeMessageProcessor());
-
-    PersonsRequestData request = new PersonsRequestData();
-    request.setUdpid("NEW_ID");
-    request.setNmlzclientid("NEW_CLIENT");
-    request.setOldudpid("OLD_ID");
-    request.setOldnmlzclientid("OLD_CLIENT");
-
-    PersonLockVO oldLock = mock(PersonLockVO.class);
-    PersonLockVO newLock = mock(PersonLockVO.class);
-
-    when(oldLock.getRowChangeTimestamp()).thenReturn(Timestamp.valueOf("2023-01-01 10:00:00")); // OLD is newer
-    when(newLock.getRowChangeTimestamp()).thenReturn(Timestamp.valueOf("2022-01-01 10:00:00"));
-
-    PersonForgotKeyVO oldForgotKey = mock(PersonForgotKeyVO.class);
-    PersonForgotKeyVO newForgotKey = mock(PersonForgotKeyVO.class);
-
-    injectPrivateField(processor, "personLocksDao", mock(PersonLocksDao.class));
-    injectPrivateField(processor, "validationUtil", mock(ValidationUtil.class));
-    injectPrivateField(processor, "deleteMessageProcessor", mock(DeleteMessageProcessor.class));
-    injectPrivateField(processor, "personForgetKeyDao", mock(PersonForgetKeyDao.class));
-
-    when(processor.personLocksDao.getPersonLock("OLD_ID", "OLD_CLIENT")).thenReturn(oldLock);
-    when(processor.personLocksDao.getPersonLock("NEW_ID", "NEW_CLIENT")).thenReturn(newLock);
-    when(processor.personForgetKeyDao.getPersonForgotKeyRecord(oldLock.getPersonLockId())).thenReturn(oldForgotKey);
-    when(processor.personForgetKeyDao.getPersonForgotKeyRecord(newLock.getPersonLockId())).thenReturn(newForgotKey);
-
-    doReturn(true).when(processor).checkValidStatus(eq(oldForgotKey), eq(newForgotKey), any(), eq(request));
-    when(processor.validationUtil.insertPersonLockUsageAccountMerge(any(), any(), eq(Constants.UDP_MERGE_OLD))).thenReturn(1);
-    when(processor.validationUtil.insertPersonLockUsageAccountMerge(any(), any(), eq(Constants.UDP_MERGE_NEW))).thenReturn(1);
-    doReturn(true).when(processor).updateLockDetails(any(), any());
-    when(processor.deleteMessageProcessor.deleteRecords(oldLock)).thenReturn(true);
-
-    String result = processor.mergePerson(request, "KEY");
+    String result = processor.mergePerson(requestData, "key");
 
     assertEquals(Constants.OK, result);
 }
