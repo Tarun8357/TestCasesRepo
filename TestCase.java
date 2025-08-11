@@ -1,35 +1,68 @@
-import org.junit.jupiter.api.Test;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 public class HealthCheckTest {
 
     @Test
-    public void testHealth_LogsHealthUp_WhenKafkaAndDbAreUp() throws Exception {
-        // Spy the class so we can stub the health checks
-        HealthCheck healthCheck = spy(new HealthCheck());
+    public void testHealthCheck_HealthUp() throws Exception {
+        // Arrange
+        HealthCheck healthCheck = Mockito.spy(new HealthCheck());
 
-        // Mock usageLog
+        // Mock dependencies
         UsageLog mockUsageLog = mock(UsageLog.class);
-        var logField = HealthCheck.class.getDeclaredField("usageLog");
-        logField.setAccessible(true);
-        logField.set(healthCheck, mockUsageLog);
+        healthCheck.getClass().getDeclaredField("usageLog").setAccessible(true);
+        healthCheck.getClass().getDeclaredField("usageLog").set(healthCheck, mockUsageLog);
 
-        // Stub check methods to both return true
+        // Mock the file location to avoid actual disk writes
+        healthCheck.getClass().getDeclaredField("healthCheckFile").setAccessible(true);
+        healthCheck.getClass().getDeclaredField("healthCheckFile").set(healthCheck, File.createTempFile("health", ".txt"));
+
+        // Force both checks to pass
         doReturn(true).when(healthCheck).checkKafka(any());
         doReturn(true).when(healthCheck).checkDB();
 
-        // Prevent file writing from interfering — point to temp file
-        var fileField = HealthCheck.class.getDeclaredField("healthCheckFile");
-        fileField.setAccessible(true);
-        fileField.set(healthCheck, "test-health-file.txt");
-
-        // Call method
+        // Act
         healthCheck.health();
 
-        // Verify that HEALTH_UP was logged
+        // Assert
         verify(mockUsageLog).logUsageEvent(
                 eq("doHealthCheck()"),
-                contains(Constants.HEALTH_UP)
+                eq("Health Check Status --->" + Constants.HEALTH_UP)
+        );
+    }
+
+    @Test
+    public void testHealthCheck_HealthDown() throws Exception {
+        // Arrange
+        HealthCheck healthCheck = Mockito.spy(new HealthCheck());
+
+        // Mock dependencies
+        UsageLog mockUsageLog = mock(UsageLog.class);
+        healthCheck.getClass().getDeclaredField("usageLog").setAccessible(true);
+        healthCheck.getClass().getDeclaredField("usageLog").set(healthCheck, mockUsageLog);
+
+        // Mock the file location to avoid actual disk writes
+        healthCheck.getClass().getDeclaredField("healthCheckFile").setAccessible(true);
+        healthCheck.getClass().getDeclaredField("healthCheckFile").set(healthCheck, File.createTempFile("health", ".txt"));
+
+        // Force one check to fail
+        doReturn(false).when(healthCheck).checkKafka(any());
+        doReturn(true).when(healthCheck).checkDB();
+
+        // Act
+        healthCheck.health();
+
+        // Assert
+        verify(mockUsageLog).logUsageEvent(
+                eq("doHealthCheck()"),
+                eq("Health Check Status --->" + Constants.HEALTH_DOWN)
         );
     }
 }
