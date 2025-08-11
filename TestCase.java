@@ -2,11 +2,8 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.Mockito.mockStatic;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.OutputStreamWriter;
 import java.lang.reflect.Field;
+import java.io.IOException;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
@@ -15,28 +12,31 @@ public class HealthCheckTest {
 
     @Test
     void testHealthCheck_CatchBlock() throws Exception {
-        // Create instance of HealthCheck
-        HealthCheck healthCheck = new HealthCheck();
+        // Create a spy so we can mock protected/private methods like checkKafka, checkDB
+        HealthCheck healthCheck = spy(new HealthCheck());
 
-        // 1️⃣ Mock usageLog (not relevant here but prevents null pointers if accessed)
+        // ✅ Mock checkKafka and checkDB so they don't throw NPE
+        doReturn(true).when(healthCheck).checkKafka(any());
+        doReturn(true).when(healthCheck).checkDB();
+
+        // Mock usageLog to avoid NPE when logging
         UsageLog mockUsageLog = mock(UsageLog.class);
         Field usageLogField = HealthCheck.class.getDeclaredField("usageLog");
         usageLogField.setAccessible(true);
         usageLogField.set(healthCheck, mockUsageLog);
 
-        // 2️⃣ Force a bad path so FileOutputStream throws IOException
+        // Set healthCheckFile to an invalid path to force IOException
         Field fileField = HealthCheck.class.getDeclaredField("healthCheckFile");
         fileField.setAccessible(true);
-        // Point to an invalid path so writing will fail
         fileField.set(healthCheck, "/root/invalid/path/healthCheck.txt");
 
-        // 3️⃣ Mock static ErrorLogEventHelper
+        // Mock static ErrorLogEventHelper
         try (MockedStatic<ErrorLogEventHelper> mockedStatic = mockStatic(ErrorLogEventHelper.class)) {
 
-            // Execute method (this should go into the catch block)
+            // Execute method — should hit catch block
             healthCheck.health();
 
-            // 4️⃣ Verify EXACT arguments
+            // Verify static log call
             mockedStatic.verify(() -> ErrorLogEventHelper.logErrorEvent(
                     eq(HealthCheck.class.getName()),
                     eq("Error while writing the Kafka health check output file"),
