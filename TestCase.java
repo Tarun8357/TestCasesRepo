@@ -1,49 +1,35 @@
-private void mockPrivateMethod(MergeMessageProcessor processor, String methodName, boolean returnValue) throws Exception {
-    Method method = MergeMessageProcessor.class.getDeclaredMethod(methodName, PersonLockVO.class, PersonLockVO.class);
-    method.setAccessible(true);
+import org.junit.jupiter.api.Test;
+import static org.mockito.Mockito.*;
 
-    // Use a spy if method needs to be mocked dynamically (e.g., using PowerMockito)
-    MergeMessageProcessor spyProcessor = spy(processor);
-    doReturn(returnValue).when(spyProcessor).getClass().getDeclaredMethod(methodName, PersonLockVO.class, PersonLockVO.class);
-}
+public class HealthCheckTest {
 
-@Test
-void testMergePerson_Scenario5_ShouldReturnOk_WhenOldIsNewer() throws Exception {
-    MergeMessageProcessor processor = new MergeMessageProcessor();
+    @Test
+    public void testHealth_LogsHealthUp_WhenKafkaAndDbAreUp() throws Exception {
+        // Spy the class so we can stub the health checks
+        HealthCheck healthCheck = spy(new HealthCheck());
 
-    // Mocks
-    PersonLockVO oldLock = mock(PersonLockVO.class);
-    PersonLockVO newLock = mock(PersonLockVO.class);
-    PersonLocksDAO personLocksDao = mock(PersonLocksDAO.class);
-    DeleteMessageProcessor deleteProcessor = mock(DeleteMessageProcessor.class);
-    ValidationUtil validationUtil = mock(ValidationUtil.class);
+        // Mock usageLog
+        UsageLog mockUsageLog = mock(UsageLog.class);
+        var logField = HealthCheck.class.getDeclaredField("usageLog");
+        logField.setAccessible(true);
+        logField.set(healthCheck, mockUsageLog);
 
-    // PersonsRequestData
-    PersonsRequestData requestData = new PersonsRequestData();
-    requestData.setOldudpid("oldUdp");
-    requestData.setOldnmlzclientid("oldClientId");
-    requestData.setUdpid("newUdp");
-    requestData.setNmlzclientid("newClientId");
+        // Stub check methods to both return true
+        doReturn(true).when(healthCheck).checkKafka(any());
+        doReturn(true).when(healthCheck).checkDB();
 
-    // Mocks setup
-    when(oldLock.getRowChangeTimestamp()).thenReturn(Timestamp.valueOf("2024-01-02 00:00:00"));
-    when(newLock.getRowChangeTimestamp()).thenReturn(Timestamp.valueOf("2023-01-01 00:00:00"));
+        // Prevent file writing from interfering — point to temp file
+        var fileField = HealthCheck.class.getDeclaredField("healthCheckFile");
+        fileField.setAccessible(true);
+        fileField.set(healthCheck, "test-health-file.txt");
 
-    when(personLocksDao.getPersonLock("newUdp", "newClientId")).thenReturn(newLock);
-    when(personLocksDao.getPersonLock("oldUdp", "oldClientId")).thenReturn(oldLock);
+        // Call method
+        healthCheck.health();
 
-    // insertUsageCode will return 1
-    when(validationUtil.insertPersonLockUsage(oldLock, Constants.UDP_MERGE, "key")).thenReturn(1);
-
-    // updateLockDetails returns true
-    injectPrivateField(processor, "personLocksDao", personLocksDao);
-    injectPrivateField(processor, "validationUtil", validationUtil);
-    injectPrivateField(processor, "deleteMessageProcessor", deleteProcessor);
-    mockPrivateMethod(processor, "updateLockDetails", true);
-
-    when(deleteProcessor.deleteRecords(oldLock)).thenReturn(true);
-
-    String result = processor.mergePerson(requestData, "key");
-
-    assertEquals(Constants.OK, result);
+        // Verify that HEALTH_UP was logged
+        verify(mockUsageLog).logUsageEvent(
+                eq("doHealthCheck()"),
+                contains(Constants.HEALTH_UP)
+        );
+    }
 }
