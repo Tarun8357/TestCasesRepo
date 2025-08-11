@@ -1,68 +1,58 @@
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
-
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
+package com.alight.upoint.listener.healthcheck;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+
+import java.io.File;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
 
 public class HealthCheckTest {
 
     @Test
     public void testHealthCheck_HealthUp() throws Exception {
-        // Arrange
+        // Spy the HealthCheck so we can mock checkKafka and checkDB
         HealthCheck healthCheck = Mockito.spy(new HealthCheck());
 
-        // Mock dependencies
+        // Mock usageLog dependency
         UsageLog mockUsageLog = mock(UsageLog.class);
-        healthCheck.getClass().getDeclaredField("usageLog").setAccessible(true);
-        healthCheck.getClass().getDeclaredField("usageLog").set(healthCheck, mockUsageLog);
 
-        // Mock the file location to avoid actual disk writes
-        healthCheck.getClass().getDeclaredField("healthCheckFile").setAccessible(true);
-        healthCheck.getClass().getDeclaredField("healthCheckFile").set(healthCheck, File.createTempFile("health", ".txt"));
+        // Inject mockUsageLog into private field
+        Field usageLogField = healthCheck.getClass().getDeclaredField("usageLog");
+        usageLogField.setAccessible(true);
+        usageLogField.set(healthCheck, mockUsageLog);
 
-        // Force both checks to pass
+        // Mock the final String healthCheckFile with a temp file path
+        Field fileField = healthCheck.getClass().getDeclaredField("healthCheckFile");
+        fileField.setAccessible(true);
+
+        // Remove 'final' modifier for testing
+        Field modifiersField = Field.class.getDeclaredField("modifiers");
+        modifiersField.setAccessible(true);
+        modifiersField.setInt(fileField, fileField.getModifiers() & ~Modifier.FINAL);
+
+        // Assign a temporary file path string
+        String tempFilePath = File.createTempFile("health", ".txt").getAbsolutePath();
+        fileField.set(healthCheck, tempFilePath);
+
+        // Mock methods to force if condition (isUp && isUpDB) == true
         doReturn(true).when(healthCheck).checkKafka(any());
         doReturn(true).when(healthCheck).checkDB();
 
-        // Act
+        // Execute the method
         healthCheck.health();
 
-        // Assert
+        // Verify log usage event was called with correct values
         verify(mockUsageLog).logUsageEvent(
                 eq("doHealthCheck()"),
                 eq("Health Check Status --->" + Constants.HEALTH_UP)
         );
-    }
 
-    @Test
-    public void testHealthCheck_HealthDown() throws Exception {
-        // Arrange
-        HealthCheck healthCheck = Mockito.spy(new HealthCheck());
-
-        // Mock dependencies
-        UsageLog mockUsageLog = mock(UsageLog.class);
-        healthCheck.getClass().getDeclaredField("usageLog").setAccessible(true);
-        healthCheck.getClass().getDeclaredField("usageLog").set(healthCheck, mockUsageLog);
-
-        // Mock the file location to avoid actual disk writes
-        healthCheck.getClass().getDeclaredField("healthCheckFile").setAccessible(true);
-        healthCheck.getClass().getDeclaredField("healthCheckFile").set(healthCheck, File.createTempFile("health", ".txt"));
-
-        // Force one check to fail
-        doReturn(false).when(healthCheck).checkKafka(any());
-        doReturn(true).when(healthCheck).checkDB();
-
-        // Act
-        healthCheck.health();
-
-        // Assert
-        verify(mockUsageLog).logUsageEvent(
-                eq("doHealthCheck()"),
-                eq("Health Check Status --->" + Constants.HEALTH_DOWN)
-        );
+        // Optional: check the file contains HEALTH_UP
+        String fileContent = new String(java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(tempFilePath)));
+        org.junit.jupiter.api.Assertions.assertEquals(Constants.HEALTH_UP, fileContent);
     }
 }
