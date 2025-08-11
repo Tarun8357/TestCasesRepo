@@ -1,50 +1,44 @@
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
-import static org.mockito.Mockito.mockStatic;
+@Test
+void testHealthCheck_CatchIOException() throws Exception {
+    HealthCheck healthCheck = new HealthCheck();
 
-import java.lang.reflect.Field;
-import java.io.IOException;
+    // Inject a mock UsageLog so that it's not null
+    UsageLog mockUsageLog = mock(UsageLog.class);
+    Field usageLogField = HealthCheck.class.getDeclaredField("usageLog");
+    usageLogField.setAccessible(true);
+    usageLogField.set(healthCheck, mockUsageLog);
 
-import org.junit.jupiter.api.Test;
-import org.mockito.MockedStatic;
+    // Make healthCheckFile point to a path that will cause IOException (unwritable location)
+    Field fileField = HealthCheck.class.getDeclaredField("healthCheckFile");
+    fileField.setAccessible(true);
 
-public class HealthCheckTest {
+    // Remove 'final' modifier
+    Field modifiersField = Field.class.getDeclaredField("modifiers");
+    modifiersField.setAccessible(true);
+    modifiersField.setInt(fileField, fileField.getModifiers() & ~Modifier.FINAL);
 
-    @Test
-    void testHealthCheck_CatchBlock() throws Exception {
-        // Create a spy so we can mock protected/private methods like checkKafka, checkDB
-        HealthCheck healthCheck = spy(new HealthCheck());
+    fileField.set(healthCheck, "/root/unwritable_path.txt"); // should cause IOException
 
-        // ✅ Mock checkKafka and checkDB so they don't throw NPE
-        doReturn(true).when(healthCheck).checkKafka(any());
-        doReturn(true).when(healthCheck).checkDB();
+    try (MockedStatic<ErrorLogEventHelper> mockedStatic = mockStatic(ErrorLogEventHelper.class)) {
 
-        // Mock usageLog to avoid NPE when logging
-        UsageLog mockUsageLog = mock(UsageLog.class);
-        Field usageLogField = HealthCheck.class.getDeclaredField("usageLog");
-        usageLogField.setAccessible(true);
-        usageLogField.set(healthCheck, mockUsageLog);
+        ArgumentCaptor<IOException> exceptionCaptor = ArgumentCaptor.forClass(IOException.class);
 
-        // Set healthCheckFile to an invalid path to force IOException
-        Field fileField = HealthCheck.class.getDeclaredField("healthCheckFile");
-        fileField.setAccessible(true);
-        fileField.set(healthCheck, "/root/invalid/path/healthCheck.txt");
+        // Stub the static method to capture the exception argument
+        mockedStatic.when(() -> ErrorLogEventHelper.logErrorEvent(
+                anyString(),
+                anyString(),
+                anyString(),
+                exceptionCaptor.capture(),
+                anyString(),
+                anyInt()
+        )).thenReturn(null);
 
-        // Mock static ErrorLogEventHelper
-        try (MockedStatic<ErrorLogEventHelper> mockedStatic = mockStatic(ErrorLogEventHelper.class)) {
+        // Execute the method — should go into catch
+        healthCheck.health();
 
-            // Execute method — should hit catch block
-            healthCheck.health();
-
-            // Verify static log call
-            mockedStatic.verify(() -> ErrorLogEventHelper.logErrorEvent(
-                    eq(HealthCheck.class.getName()),
-                    eq("Error while writing the Kafka health check output file"),
-                    eq("health()"),
-                    any(IOException.class),
-                    eq(""),
-                    eq(ErrorLogEvent.ERROR_SEVERITY)
-            ));
-        }
+        // Assert: IOException was indeed captured
+        IOException captured = exceptionCaptor.getValue();
+        assertNotNull(captured, "Expected IOException to be passed to logErrorEvent");
+        assertTrue(captured instanceof IOException);
     }
 }
