@@ -1,35 +1,50 @@
-@Test
-public void testHealthCheck_WhenIOExceptionOccurs_ShouldLogError() throws Exception {
-    // Spy the HealthCheck so we can mock checkKafka and checkDB
-    HealthCheck healthCheck = Mockito.spy(new HealthCheck());
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mockStatic;
 
-    // Mock usageLog to avoid null pointer in if/else
-    UsageLog mockUsageLog = mock(UsageLog.class);
-    Field usageLogField = healthCheck.getClass().getDeclaredField("usageLog");
-    usageLogField.setAccessible(true);
-    usageLogField.set(healthCheck, mockUsageLog);
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.lang.reflect.Field;
 
-    // Set healthCheckFile to a directory (not a file) to cause IOException
-    File tempDir = java.nio.file.Files.createTempDirectory("unwritableDir").toFile();
-    Field fileField = healthCheck.getClass().getDeclaredField("healthCheckFile");
-    fileField.setAccessible(true);
-    fileField.set(healthCheck, tempDir.getAbsolutePath());
+import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 
-    // Mock checkKafka and checkDB so we enter the if branch first
-    doReturn(true).when(healthCheck).checkKafka(any());
-    doReturn(true).when(healthCheck).checkDB();
+public class HealthCheckTest {
 
-    // Mock ErrorLogEventHelper (static) using Mockito's mockStatic
-    try (MockedStatic<ErrorLogEventHelper> mockedStatic = Mockito.mockStatic(ErrorLogEventHelper.class)) {
-        healthCheck.health();
+    @Test
+    void testHealthCheck_CatchBlock() throws Exception {
+        // Create instance of HealthCheck
+        HealthCheck healthCheck = new HealthCheck();
 
-        mockedStatic.verify(() -> ErrorLogEventHelper.logErrorEvent(
-                eq(HealthCheck.class.getName()),
-                eq("Error while writing the Kafka health check output file"),
-                eq("health()"),
-                any(IOException.class),
-                eq(""),
-                eq(ErrorLogEvent.ERROR_SEVERITY)
-        ));
+        // 1️⃣ Mock usageLog (not relevant here but prevents null pointers if accessed)
+        UsageLog mockUsageLog = mock(UsageLog.class);
+        Field usageLogField = HealthCheck.class.getDeclaredField("usageLog");
+        usageLogField.setAccessible(true);
+        usageLogField.set(healthCheck, mockUsageLog);
+
+        // 2️⃣ Force a bad path so FileOutputStream throws IOException
+        Field fileField = HealthCheck.class.getDeclaredField("healthCheckFile");
+        fileField.setAccessible(true);
+        // Point to an invalid path so writing will fail
+        fileField.set(healthCheck, "/root/invalid/path/healthCheck.txt");
+
+        // 3️⃣ Mock static ErrorLogEventHelper
+        try (MockedStatic<ErrorLogEventHelper> mockedStatic = mockStatic(ErrorLogEventHelper.class)) {
+
+            // Execute method (this should go into the catch block)
+            healthCheck.health();
+
+            // 4️⃣ Verify EXACT arguments
+            mockedStatic.verify(() -> ErrorLogEventHelper.logErrorEvent(
+                    eq(HealthCheck.class.getName()),
+                    eq("Error while writing the Kafka health check output file"),
+                    eq("health()"),
+                    any(IOException.class),
+                    eq(""),
+                    eq(ErrorLogEvent.ERROR_SEVERITY)
+            ));
+        }
     }
 }
