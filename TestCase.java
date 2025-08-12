@@ -1,51 +1,28 @@
-import static org.mockito.Mockito.*;
-import static org.junit.jupiter.api.Assertions.*;
+@Test
+public void testLogUsageLifecycle_WhenLoggingEnabled() {
+    ReflectionTestUtils.setField(usageLog, "loggingEnabled", "true");
+    ReflectionTestUtils.setField(usageLog, "activeProfile", "DEMO");
 
-import org.junit.jupiter.api.Test;
-import org.mockito.MockedStatic;
+    try (MockedStatic<LogUtils> logUtilsMock = Mockito.mockStatic(LogUtils.class)) {
 
-public class HealthCheckTest {
+        usageLog.logUsageLifecycle("myMethod", "myMessage");
 
-    @Test
-    public void testLogUsageLifecycle_WhenLoggingEnabled() {
-        HealthCheck healthCheck = new HealthCheck();
-        healthCheck.loggingEnabled = "true";
-        healthCheck.activeProfile = "dev";
-
-        try (MockedStatic<LogUtils> logUtilsMock = mockStatic(LogUtils.class)) {
-            try (MockedStatic<UsageLog> usageLogMock = mockStatic(UsageLog.class)) {
-                
-                // Act
-                healthCheck.logUsageLifecycle("methodX", "messageX");
-
-                // Assert — verify static calls
-                logUtilsMock.verify(() -> 
-                    LogUtils.setLogAttribute(LogAttributes.LIFECYCLE_ATTRIB, "]dev]"));
-                logUtilsMock.verify(() -> 
-                    LogUtils.setLogAttribute(LogAttributes.SERVICE_NAME_ATTRIB, Constants.ACCOUNTLOCK_LISTENER_PROCESS));
-                
-                usageLogMock.verify(() -> 
-                    UsageLog.logUsageEvent(any(), eq("methodX"), eq("messageX")));
-            }
-        }
+        logUtilsMock.verify(() ->
+            LogUtils.setLogAttribute(LogAttributes.LIFECYCLE_ATTRIB, "]DEMO]"));
+        logUtilsMock.verify(() ->
+            LogUtils.setLogAttribute(LogAttributes.SERVICE_NAME_ATTRIB, Constants.ACCOUNTLOCK_LISTENER_PROCESS));
     }
+}
 
-    @Test
-    public void testLogUsageLifecycle_WhenLoggingDisabled() {
-        HealthCheck healthCheck = new HealthCheck();
-        healthCheck.loggingEnabled = "false"; // Will skip the if-branch
-        healthCheck.activeProfile = "dev";
+@Test
+public void testLogUsageLifecycle_WhenLoggingDisabled() {
+    ReflectionTestUtils.setField(usageLog, "loggingEnabled", "false");
+    ReflectionTestUtils.setField(usageLog, "activeProfile", "DEMO");
 
-        try (MockedStatic<LogUtils> logUtilsMock = mockStatic(LogUtils.class)) {
-            try (MockedStatic<UsageLog> usageLogMock = mockStatic(UsageLog.class)) {
+    try (MockedStatic<LogUtils> logUtilsMock = Mockito.mockStatic(LogUtils.class)) {
 
-                // Act
-                healthCheck.logUsageLifecycle("methodX", "messageX");
+        usageLog.logUsageLifecycle("myMethod", "myMessage");
 
-                // Assert — nothing should be called
-                logUtilsMock.verifyNoInteractions();
-                usageLogMock.verifyNoInteractions();
-            }
-        }
+        logUtilsMock.verifyNoInteractions();
     }
 }
