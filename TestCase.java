@@ -1,28 +1,38 @@
 @Test
-public void testLogUsageLifecycle_WhenLoggingEnabled() {
-    ReflectionTestUtils.setField(usageLog, "loggingEnabled", "true");
-    ReflectionTestUtils.setField(usageLog, "activeProfile", "DEMO");
+public void testLogUsageEvent_WhenInfoEnabled() {
+    Logger mockLogger = mock(Logger.class);
+    when(mockLogger.isInfoEnabled()).thenReturn(true);
 
-    try (MockedStatic<LogUtils> logUtilsMock = Mockito.mockStatic(LogUtils.class)) {
+    UsageLog usageLogSpy = Mockito.spy(usageLog);
 
-        usageLog.logUsageLifecycle("myMethod", "myMessage");
+    // Stub buildLogMapFromMDC to return a predictable map
+    Map<String, String> fakeMap = new HashMap<>();
+    doReturn(fakeMap).when(usageLogSpy)
+            .buildLogMapFromMDC(eq(mockLogger), any());
 
-        logUtilsMock.verify(() ->
-            LogUtils.setLogAttribute(LogAttributes.LIFECYCLE_ATTRIB, "]DEMO]"));
-        logUtilsMock.verify(() ->
-            LogUtils.setLogAttribute(LogAttributes.SERVICE_NAME_ATTRIB, Constants.ACCOUNTLOCK_LISTENER_PROCESS));
-    }
+    usageLogSpy.logUsageEvent(mockLogger, "myMethod", "myMessage");
+
+    // Verify buildLogMapFromMDC was called
+    verify(usageLogSpy).buildLogMapFromMDC(eq(mockLogger), any());
+
+    // Verify logEvent() was called with INFO severity
+    verify(usageLogSpy).logEvent(eq(LogConstants.INFO_SEVERITY), eq(mockLogger), eq(fakeMap));
+
+    // Check map modifications
+    assertEquals("myMethod", fakeMap.get(LogAttributes.METHOD_ATTRIB));
+    assertEquals("myMessage", fakeMap.get(LogAttributes.MESSAGE_ATTRIB));
 }
 
 @Test
-public void testLogUsageLifecycle_WhenLoggingDisabled() {
-    ReflectionTestUtils.setField(usageLog, "loggingEnabled", "false");
-    ReflectionTestUtils.setField(usageLog, "activeProfile", "DEMO");
+public void testLogUsageEvent_WhenInfoDisabled() {
+    Logger mockLogger = mock(Logger.class);
+    when(mockLogger.isInfoEnabled()).thenReturn(false);
 
-    try (MockedStatic<LogUtils> logUtilsMock = Mockito.mockStatic(LogUtils.class)) {
+    UsageLog usageLogSpy = Mockito.spy(usageLog);
 
-        usageLog.logUsageLifecycle("myMethod", "myMessage");
+    usageLogSpy.logUsageEvent(mockLogger, "myMethod", "myMessage");
 
-        logUtilsMock.verifyNoInteractions();
-    }
+    // When info disabled, buildLogMapFromMDC and logEvent should never be called
+    verify(usageLogSpy, never()).buildLogMapFromMDC(any(), any());
+    verify(usageLogSpy, never()).logEvent(anyString(), any(), any());
 }
