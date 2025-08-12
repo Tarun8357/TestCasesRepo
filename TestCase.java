@@ -1,34 +1,94 @@
-@Test
-public void testHealthCheck_IfCondition() throws Exception {
-    // Spy the class so we can mock only specific methods
-    HealthCheck healthCheck = Mockito.spy(new HealthCheck());
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
-    // Inject mock UsageLog
-    UsageLog mockUsageLog = mock(UsageLog.class);
-    Field usageLogField = healthCheck.getClass().getDeclaredField("usageLog");
-    usageLogField.setAccessible(true);
-    usageLogField.set(healthCheck, mockUsageLog);
+import java.io.File;
+import java.lang.reflect.Field;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 
-    // Create temp file for healthCheckFile
-    Field fileField = healthCheck.getClass().getDeclaredField("healthCheckFile");
-    fileField.setAccessible(true);
-    String tempFilePath = File.createTempFile("health", ".txt").getAbsolutePath();
-    fileField.set(healthCheck, tempFilePath);
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
-    // Mock dependencies to force if-condition
-    doReturn(true).when(healthCheck).checkKafka(any());
-    doReturn(true).when(healthCheck).checkDB();
+public class HealthCheckTest {
 
-    // Act
-    healthCheck.health();
+    private HealthCheck createHealthCheckWithMocks(String tempFilePath, UsageLog mockUsageLog) throws Exception {
+        HealthCheck healthCheck = Mockito.spy(new HealthCheck());
 
-    // Assert file content matches expected health status
-    String fileContent = Files.readString(Paths.get(tempFilePath));
-    Assertions.assertEquals(Constants.HEALTH_UP, fileContent);
+        // Inject mock UsageLog
+        Field usageLogField = healthCheck.getClass().getDeclaredField("usageLog");
+        usageLogField.setAccessible(true);
+        usageLogField.set(healthCheck, mockUsageLog);
 
-    // Verify log message
-    verify(mockUsageLog).logUsageEvent(
-            eq("doHealthCheck()"),
-            contains(Constants.HEALTH_UP)
-    );
+        // Inject temp file path
+        Field fileField = healthCheck.getClass().getDeclaredField("healthCheckFile");
+        fileField.setAccessible(true);
+        fileField.set(healthCheck, tempFilePath);
+
+        return healthCheck;
+    }
+
+    @Test
+    public void testIfCondition_TrueTrue() throws Exception {
+        String tempFilePath = File.createTempFile("health", ".txt").getAbsolutePath();
+        UsageLog mockUsageLog = mock(UsageLog.class);
+        HealthCheck healthCheck = createHealthCheckWithMocks(tempFilePath, mockUsageLog);
+
+        doReturn(true).when(healthCheck).checkKafka(any());
+        doReturn(true).when(healthCheck).checkDB();
+
+        healthCheck.health();
+
+        String fileContent = Files.readString(Paths.get(tempFilePath));
+        Assertions.assertEquals(Constants.HEALTH_UP, fileContent);
+        verify(mockUsageLog).logUsageEvent(eq("doHealthCheck()"), contains(Constants.HEALTH_UP));
+    }
+
+    @Test
+    public void testIfCondition_FalseTrue() throws Exception {
+        String tempFilePath = File.createTempFile("health", ".txt").getAbsolutePath();
+        UsageLog mockUsageLog = mock(UsageLog.class);
+        HealthCheck healthCheck = createHealthCheckWithMocks(tempFilePath, mockUsageLog);
+
+        doReturn(false).when(healthCheck).checkKafka(any());
+        doReturn(true).when(healthCheck).checkDB();
+
+        healthCheck.health();
+
+        String fileContent = Files.readString(Paths.get(tempFilePath));
+        Assertions.assertEquals(Constants.HEALTH_DOWN, fileContent);
+        verify(mockUsageLog).logUsageEvent(eq("doHealthCheck()"), contains(Constants.HEALTH_DOWN));
+    }
+
+    @Test
+    public void testIfCondition_TrueFalse() throws Exception {
+        String tempFilePath = File.createTempFile("health", ".txt").getAbsolutePath();
+        UsageLog mockUsageLog = mock(UsageLog.class);
+        HealthCheck healthCheck = createHealthCheckWithMocks(tempFilePath, mockUsageLog);
+
+        doReturn(true).when(healthCheck).checkKafka(any());
+        doReturn(false).when(healthCheck).checkDB();
+
+        healthCheck.health();
+
+        String fileContent = Files.readString(Paths.get(tempFilePath));
+        Assertions.assertEquals(Constants.HEALTH_DOWN, fileContent);
+        verify(mockUsageLog).logUsageEvent(eq("doHealthCheck()"), contains(Constants.HEALTH_DOWN));
+    }
+
+    @Test
+    public void testIfCondition_FalseFalse() throws Exception {
+        String tempFilePath = File.createTempFile("health", ".txt").getAbsolutePath();
+        UsageLog mockUsageLog = mock(UsageLog.class);
+        HealthCheck healthCheck = createHealthCheckWithMocks(tempFilePath, mockUsageLog);
+
+        doReturn(false).when(healthCheck).checkKafka(any());
+        doReturn(false).when(healthCheck).checkDB();
+
+        healthCheck.health();
+
+        String fileContent = Files.readString(Paths.get(tempFilePath));
+        Assertions.assertEquals(Constants.HEALTH_DOWN, fileContent);
+        verify(mockUsageLog).logUsageEvent(eq("doHealthCheck()"), contains(Constants.HEALTH_DOWN));
+    }
 }
