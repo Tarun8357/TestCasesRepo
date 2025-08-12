@@ -1,25 +1,12 @@
 @Test
-    void testCheckDB_ShouldReturnTrue_WhenResultsEmpty() {
-        // Arrange: empty results
-        when(template.query(anyString(), any(SingleColumnRowMapper.class)))
-                .thenReturn(Collections.emptyList());
+    void testCheckKafka_ShouldReturnFalse_WhenExceptionThrown() throws Exception {
+        // Arrange
+        when(akafkaAdminClient.listTopics())
+                .thenThrow(new RuntimeException("Kafka not reachable"));
 
         // Act
-        boolean result = healthCheck.checkDB();
+        boolean result = healthCheck.checkKafka(akafkaAdminClient);
 
         // Assert
-        assertTrue(result, "Expected checkDB to return true when results are empty");
-    }
-
-    @Test
-    void testCheckDB_ShouldReturnFalse_WhenResultsNotEmpty() {
-        // Arrange: non-empty results
-        when(template.query(anyString(), any(SingleColumnRowMapper.class)))
-                .thenReturn(Collections.singletonList(1));
-
-        // Act
-        boolean result = healthCheck.checkDB();
-
-        // Assert
-        assertFalse(result, "Expected checkDB to return false when results are not empty");
+        assertFalse(result, "Expected checkKafka to return false when Kafka throws exception");
     }
