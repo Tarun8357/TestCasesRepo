@@ -1,44 +1,49 @@
 @Test
-void testHealthCheck_CatchIOException() throws Exception {
+void testCheckKafka_TopicNamesNull_ShouldReturnFalse() throws Exception {
     HealthCheck healthCheck = new HealthCheck();
 
-    // Inject a mock UsageLog so that it's not null
-    UsageLog mockUsageLog = mock(UsageLog.class);
-    Field usageLogField = HealthCheck.class.getDeclaredField("usageLog");
-    usageLogField.setAccessible(true);
-    usageLogField.set(healthCheck, mockUsageLog);
+    // Mock AdminClient and ListTopicsResult
+    AdminClient mockAdminClient = mock(AdminClient.class);
+    ListTopicsResult mockTopicsResult = mock(ListTopicsResult.class);
 
-    // Make healthCheckFile point to a path that will cause IOException (unwritable location)
-    Field fileField = HealthCheck.class.getDeclaredField("healthCheckFile");
-    fileField.setAccessible(true);
+    // Stub listTopics() to return mockTopicsResult
+    when(mockAdminClient.listTopics()).thenReturn(mockTopicsResult);
 
-    // Remove 'final' modifier
-    Field modifiersField = Field.class.getDeclaredField("modifiers");
-    modifiersField.setAccessible(true);
-    modifiersField.setInt(fileField, fileField.getModifiers() & ~Modifier.FINAL);
+    // Mock KafkaFuture for names()
+    KafkaFuture<Set<String>> mockFuture = mock(KafkaFuture.class);
+    when(mockTopicsResult.names()).thenReturn(mockFuture);
 
-    fileField.set(healthCheck, "/root/unwritable_path.txt"); // should cause IOException
+    // Stub .get() to return null
+    when(mockFuture.get()).thenReturn(null);
 
-    try (MockedStatic<ErrorLogEventHelper> mockedStatic = mockStatic(ErrorLogEventHelper.class)) {
+    // Call method
+    boolean result = healthCheck.checkKafka(mockAdminClient);
 
-        ArgumentCaptor<IOException> exceptionCaptor = ArgumentCaptor.forClass(IOException.class);
+    // Assert
+    assertFalse(result, "Expected false when topicNames is null");
+}
 
-        // Stub the static method to capture the exception argument
-        mockedStatic.when(() -> ErrorLogEventHelper.logErrorEvent(
-                anyString(),
-                anyString(),
-                anyString(),
-                exceptionCaptor.capture(),
-                anyString(),
-                anyInt()
-        )).thenReturn(null);
+@Test
+void testCheckKafka_Exception_ShouldReturnFalse() throws Exception {
+    HealthCheck healthCheck = new HealthCheck();
 
-        // Execute the method — should go into catch
-        healthCheck.health();
+    // Mock AdminClient and ListTopicsResult
+    AdminClient mockAdminClient = mock(AdminClient.class);
+    ListTopicsResult mockTopicsResult = mock(ListTopicsResult.class);
 
-        // Assert: IOException was indeed captured
-        IOException captured = exceptionCaptor.getValue();
-        assertNotNull(captured, "Expected IOException to be passed to logErrorEvent");
-        assertTrue(captured instanceof IOException);
-    }
+    // Stub listTopics() to return mockTopicsResult
+    when(mockAdminClient.listTopics()).thenReturn(mockTopicsResult);
+
+    // Mock KafkaFuture for names()
+    KafkaFuture<Set<String>> mockFuture = mock(KafkaFuture.class);
+    when(mockTopicsResult.names()).thenReturn(mockFuture);
+
+    // Stub .get() to throw exception
+    when(mockFuture.get()).thenThrow(new RuntimeException("Kafka failure"));
+
+    // Call method
+    boolean result = healthCheck.checkKafka(mockAdminClient);
+
+    // Assert
+    assertFalse(result, "Expected false when exception occurs");
 }
