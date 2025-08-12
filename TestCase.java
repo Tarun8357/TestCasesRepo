@@ -1,40 +1,51 @@
 import static org.mockito.Mockito.*;
-
-import java.io.File;
-import java.lang.reflect.Field;
+import static org.junit.jupiter.api.Assertions.*;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 
 public class HealthCheckTest {
 
     @Test
-    public void testHealth_CatchBlockTriggered() throws Exception {
-        // Arrange
-        HealthCheck healthCheck = spy(new HealthCheck());
-        UsageLog mockUsageLog = mock(UsageLog.class);
+    public void testLogUsageLifecycle_WhenLoggingEnabled() {
+        HealthCheck healthCheck = new HealthCheck();
+        healthCheck.loggingEnabled = "true";
+        healthCheck.activeProfile = "dev";
 
-        // Inject mocked UsageLog
-        Field usageLogField = HealthCheck.class.getDeclaredField("usageLog");
-        usageLogField.setAccessible(true);
-        usageLogField.set(healthCheck, mockUsageLog);
+        try (MockedStatic<LogUtils> logUtilsMock = mockStatic(LogUtils.class)) {
+            try (MockedStatic<UsageLog> usageLogMock = mockStatic(UsageLog.class)) {
+                
+                // Act
+                healthCheck.logUsageLifecycle("methodX", "messageX");
 
-        // Make Kafka and DB checks return true so we pass the if-condition
-        doReturn(true).when(healthCheck).checkKafka(any());
-        doReturn(true).when(healthCheck).checkDB();
+                // Assert — verify static calls
+                logUtilsMock.verify(() -> 
+                    LogUtils.setLogAttribute(LogAttributes.LIFECYCLE_ATTRIB, "]dev]"));
+                logUtilsMock.verify(() -> 
+                    LogUtils.setLogAttribute(LogAttributes.SERVICE_NAME_ATTRIB, Constants.ACCOUNTLOCK_LISTENER_PROCESS));
+                
+                usageLogMock.verify(() -> 
+                    UsageLog.logUsageEvent(any(), eq("methodX"), eq("messageX")));
+            }
+        }
+    }
 
-        // Create a directory instead of file to cause IOException in FileOutputStream
-        File tempDir = new File(System.getProperty("java.io.tmpdir"), "healthDirForTest");
-        tempDir.mkdir();
+    @Test
+    public void testLogUsageLifecycle_WhenLoggingDisabled() {
+        HealthCheck healthCheck = new HealthCheck();
+        healthCheck.loggingEnabled = "false"; // Will skip the if-branch
+        healthCheck.activeProfile = "dev";
 
-        // Inject the directory path into healthCheckFile
-        Field fileField = HealthCheck.class.getDeclaredField("healthCheckFile");
-        fileField.setAccessible(true);
-        fileField.set(healthCheck, tempDir.getAbsolutePath());
+        try (MockedStatic<LogUtils> logUtilsMock = mockStatic(LogUtils.class)) {
+            try (MockedStatic<UsageLog> usageLogMock = mockStatic(UsageLog.class)) {
 
-        // Act — This should hit the catch block
-        healthCheck.health();
+                // Act
+                healthCheck.logUsageLifecycle("methodX", "messageX");
 
-        // No assertion needed just for coverage, but you can still verify logging
-        verify(mockUsageLog).logUsageEvent(eq("doHealthCheck()"), contains("Health Check Status --->UP"));
+                // Assert — nothing should be called
+                logUtilsMock.verifyNoInteractions();
+                usageLogMock.verifyNoInteractions();
+            }
+        }
     }
 }
