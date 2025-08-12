@@ -5,23 +5,22 @@ void testCheckKafka_TopicNamesNull_ShouldReturnFalse() throws Exception {
     // Mock AdminClient and ListTopicsResult
     AdminClient mockAdminClient = mock(AdminClient.class);
     ListTopicsResult mockTopicsResult = mock(ListTopicsResult.class);
-
-    // Stub listTopics() to return mockTopicsResult
-    when(mockAdminClient.listTopics()).thenReturn(mockTopicsResult);
-
-    // Mock KafkaFuture for names()
     KafkaFuture<Set<String>> mockFuture = mock(KafkaFuture.class);
-    when(mockTopicsResult.names()).thenReturn(mockFuture);
 
-    // Stub .get() to return null
+    when(mockAdminClient.listTopics()).thenReturn(mockTopicsResult);
+    when(mockTopicsResult.names()).thenReturn(mockFuture);
     when(mockFuture.get()).thenReturn(null);
 
-    // Call method
+    // Inject mock AdminClient into private field
+    Field adminClientField = HealthCheck.class.getDeclaredField("kafkaAdminClient");
+    adminClientField.setAccessible(true);
+    adminClientField.set(healthCheck, mockAdminClient);
+
     boolean result = healthCheck.checkKafka(mockAdminClient);
 
-    // Assert
-    assertFalse(result, "Expected false when topicNames is null");
+    assertFalse(result);
 }
+
 
 @Test
 void testCheckKafka_Exception_ShouldReturnFalse() throws Exception {
