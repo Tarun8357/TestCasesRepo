@@ -1,23 +1,25 @@
 @Test
-    void testCheckKafka_TopicNamesNull_ShouldReturnFalse() throws Exception {
-        ListTopicsResult mockListTopics = mock(ListTopicsResult.class);
-        KafkaFuture<Set<String>> mockNamesFuture = mock(KafkaFuture.class);
+    void testCheckDB_ShouldReturnTrue_WhenResultsEmpty() {
+        // Arrange: results.isEmpty() = true
+        when(template.query(anyString(), any(SingleColumnRowMapper.class)))
+                .thenReturn(Collections.emptyList());
 
-        when(kafkaAdminClient.listTopics()).thenReturn(mockListTopics);
-        when(mockListTopics.names()).thenReturn(mockNamesFuture);
-        when(mockNamesFuture.get()).thenReturn(null); // triggers topicNames == null path
+        // Act
+        boolean result = healthCheck.checkDB();
 
-        boolean result = kafkaHealthCheck.checkKafka(kafkaAdminClient);
-
-        assertFalse(result);
+        // Assert
+        assertTrue(result, "Expected checkDB to return true when results are empty");
     }
 
     @Test
-    void testCheckKafka_ExceptionThrown_ShouldReturnFalse() throws Exception {
-        when(kafkaAdminClient.listTopics()).thenThrow(new RuntimeException("Kafka error"));
+    void testCheckDB_ShouldReturnFalse_WhenDataAccessExceptionThrown() {
+        // Arrange: trigger catch block
+        when(template.query(anyString(), any(SingleColumnRowMapper.class)))
+                .thenThrow(new DataAccessResourceFailureException("DB connection error"));
 
-        boolean result = kafkaHealthCheck.checkKafka(kafkaAdminClient);
+        // Act
+        boolean result = healthCheck.checkDB();
 
-        assertFalse(result);
+        // Assert
+        assertFalse(result, "Expected checkDB to return false when exception is thrown");
     }
-}
