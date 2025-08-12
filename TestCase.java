@@ -1,48 +1,23 @@
 @Test
-void testCheckKafka_TopicNamesNull_ShouldReturnFalse() throws Exception {
-    HealthCheck healthCheck = new HealthCheck();
+    void testCheckKafka_TopicNamesNull_ShouldReturnFalse() throws Exception {
+        ListTopicsResult mockListTopics = mock(ListTopicsResult.class);
+        KafkaFuture<Set<String>> mockNamesFuture = mock(KafkaFuture.class);
 
-    // Mock AdminClient and ListTopicsResult
-    AdminClient mockAdminClient = mock(AdminClient.class);
-    ListTopicsResult mockTopicsResult = mock(ListTopicsResult.class);
-    KafkaFuture<Set<String>> mockFuture = mock(KafkaFuture.class);
+        when(kafkaAdminClient.listTopics()).thenReturn(mockListTopics);
+        when(mockListTopics.names()).thenReturn(mockNamesFuture);
+        when(mockNamesFuture.get()).thenReturn(null); // triggers topicNames == null path
 
-    when(mockAdminClient.listTopics()).thenReturn(mockTopicsResult);
-    when(mockTopicsResult.names()).thenReturn(mockFuture);
-    when(mockFuture.get()).thenReturn(null);
+        boolean result = kafkaHealthCheck.checkKafka(kafkaAdminClient);
 
-    // Inject mock AdminClient into private field
-    Field adminClientField = HealthCheck.class.getDeclaredField("kafkaAdminClient");
-    adminClientField.setAccessible(true);
-    adminClientField.set(healthCheck, mockAdminClient);
+        assertFalse(result);
+    }
 
-    boolean result = healthCheck.checkKafka(mockAdminClient);
+    @Test
+    void testCheckKafka_ExceptionThrown_ShouldReturnFalse() throws Exception {
+        when(kafkaAdminClient.listTopics()).thenThrow(new RuntimeException("Kafka error"));
 
-    assertFalse(result);
-}
+        boolean result = kafkaHealthCheck.checkKafka(kafkaAdminClient);
 
-
-@Test
-void testCheckKafka_Exception_ShouldReturnFalse() throws Exception {
-    HealthCheck healthCheck = new HealthCheck();
-
-    // Mock AdminClient and ListTopicsResult
-    AdminClient mockAdminClient = mock(AdminClient.class);
-    ListTopicsResult mockTopicsResult = mock(ListTopicsResult.class);
-
-    // Stub listTopics() to return mockTopicsResult
-    when(mockAdminClient.listTopics()).thenReturn(mockTopicsResult);
-
-    // Mock KafkaFuture for names()
-    KafkaFuture<Set<String>> mockFuture = mock(KafkaFuture.class);
-    when(mockTopicsResult.names()).thenReturn(mockFuture);
-
-    // Stub .get() to throw exception
-    when(mockFuture.get()).thenThrow(new RuntimeException("Kafka failure"));
-
-    // Call method
-    boolean result = healthCheck.checkKafka(mockAdminClient);
-
-    // Assert
-    assertFalse(result, "Expected false when exception occurs");
+        assertFalse(result);
+    }
 }
