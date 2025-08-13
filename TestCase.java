@@ -1,5 +1,5 @@
 @Test
-void testDeleteRecords_FirstIfConditionTrue() {
+void testDeleteRecords_FirstIfConditionFalse() {
     // Arrange
     DeleteMessageProcessor processor = new DeleteMessageProcessor();
 
@@ -9,7 +9,7 @@ void testDeleteRecords_FirstIfConditionTrue() {
     PersonFormDAD mockFormDao = mock(PersonFormDAD.class);
     PersonLocksDao mockLocksDao = mock(PersonLocksDao.class);
 
-    // Inject mocks
+    // Inject mocks to avoid NPE in later if conditions
     ReflectionTestUtils.setField(processor, "personUnlockDao", mockUnlockDao);
     ReflectionTestUtils.setField(processor, "personFileDAO", mockFileDao);
     ReflectionTestUtils.setField(processor, "personForgetKeyDao", mockForgetDao);
@@ -20,19 +20,14 @@ void testDeleteRecords_FirstIfConditionTrue() {
     PersonLockVO mockPersonLock = mock(PersonLockVO.class);
     when(mockPersonLock.getPersonLockId()).thenReturn("lock123");
 
-    // First if → true
-    when(mockUnlockDao.getPersonUnlockRecordBoolean("lock123")).thenReturn(true);
-    when(mockUnlockDao.deletePersonUnlockRecord("lock123")).thenReturn(true);
-
-    // Later if's → false so they won't execute
-    when(mockFileDao.getPersonFileCountBoolean(any())).thenReturn(false);
-    when(mockForgetDao.isRecordPresent(any())).thenReturn(false);
-    when(mockFormDao.getPersonFormCountBoolean(any())).thenReturn(false);
+    // First if → false
+    when(mockUnlockDao.getPersonUnlockRecordBoolean("lock123")).thenReturn(false);
 
     // Act
-    processor.deleteRecords(mockPersonLock);
+    boolean result = processor.deleteRecords(mockPersonLock);
 
     // Assert
+    assertFalse(result);
     verify(mockUnlockDao).getPersonUnlockRecordBoolean("lock123");
-    verify(mockUnlockDao).deletePersonUnlockRecord("lock123");
+    verify(mockUnlockDao, never()).deletePersonUnlockRecord(any());
 }
