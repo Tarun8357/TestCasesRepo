@@ -1,9 +1,9 @@
 @Test
-void testDeletePerson_ActiveProfileProdBranch() {
+void testDeletePerson_ActiveProfileNotProdBranch() {
     // Arrange
     DeleteMessageProcessor processor = new DeleteMessageProcessor();
 
-    // Mocks for dependencies
+    // Mock dependencies
     PersonLocksDao mockLocksDao = mock(PersonLocksDao.class);
     PersonForgetKeyDao mockForgetKeyDao = mock(PersonForgetKeyDao.class);
     MergeMessageProcessor mockMergeProcessor = mock(MergeMessageProcessor.class);
@@ -12,9 +12,9 @@ void testDeletePerson_ActiveProfileProdBranch() {
     ReflectionTestUtils.setField(processor, "personLocksDao", mockLocksDao);
     ReflectionTestUtils.setField(processor, "personForgetKeyDao", mockForgetKeyDao);
     ReflectionTestUtils.setField(processor, "mergeMessageProcessor", mockMergeProcessor);
-    ReflectionTestUtils.setField(processor, "activeProfile", "prod");
+    ReflectionTestUtils.setField(processor, "activeProfile", "dev"); // NOT prod
 
-    // Mock data for request
+    // Mock request
     PersonsRequestData request = new PersonsRequestData();
     request.setUdpid("udp123");
     request.setNmlzclientid("client123");
@@ -22,16 +22,7 @@ void testDeletePerson_ActiveProfileProdBranch() {
     // Mock PersonLockVO
     PersonLockVO mockLock = mock(PersonLockVO.class);
     when(mockLock.getPersonLockId()).thenReturn("lock123");
-    when(mockLock.getUdpGlobalPersonId()).thenReturn("udpGID");
-    when(mockLock.getNormalizedClientId()).thenReturn("nmlzCID");
     when(mockLocksDao.getPersonLock("udp123", "client123")).thenReturn(mockLock);
-
-    // Mock PersonForgotKeyVO
-    PersonForgotKeyVO mockForgotKey = mock(PersonForgotKeyVO.class);
-    when(mockForgotKey.getForgotKeyWorkflow()).thenReturn("workflow1");
-    when(mockForgotKey.getForgotKeyStatusCode()).thenReturn("status1");
-    when(mockForgotKey.getRowChangeTimestamp()).thenReturn("timestamp1");
-    when(mockForgetKeyDao.getPersonForgotKeyRecord("lock123")).thenReturn(mockForgotKey);
 
     // Act
     String result = processor.deletePerson(request, "someKey");
@@ -39,6 +30,7 @@ void testDeletePerson_ActiveProfileProdBranch() {
     // Assert
     assertNotNull(result);
     verify(mockLocksDao).getPersonLock("udp123", "client123");
-    verify(mockForgetKeyDao).getPersonForgotKeyRecord("lock123");
-    verify(mockMergeProcessor).mailSent(anyString(), anyString(), anyString());
+    // Ensure we did NOT call the prod-specific logic
+    verify(mockForgetKeyDao, never()).getPersonForgotKeyRecord(anyString());
+    verify(mockMergeProcessor, never()).mailSent(anyString(), anyString(), anyString());
 }
