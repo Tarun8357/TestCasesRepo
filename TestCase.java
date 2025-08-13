@@ -1,8 +1,8 @@
 @Test
-void testCheckValidStatus_OldRecordStatusMatch_ProdProfile() {
+void testCheckValidStatus_NewRecordStatusMatch_ProdProfile() {
     MergeMessageProcessor processor = new MergeMessageProcessor();
 
-    // Set fields so no NPE for mail list and subject
+    // Set test values
     ReflectionTestUtils.setField(processor, "activeProfile", "prod");
     ReflectionTestUtils.setField(processor, "mergeStatusSubject", "Test Subject");
     ReflectionTestUtils.setField(processor, "sendMailList", "test@example.com");
@@ -11,13 +11,13 @@ void testCheckValidStatus_OldRecordStatusMatch_ProdProfile() {
     EmailSender mockEmailSender = Mockito.mock(EmailSender.class);
     ReflectionTestUtils.setField(processor, "sendEmail", mockEmailSender);
 
-    // Old record with matching status
-    PersonForgotKeyVO oldVO = new PersonForgotKeyVO();
-    oldVO.setForgotKeyStatusCode("ACTIVE");
-    oldVO.setForgotKeyWorkflow("TestWorkflow");
-    oldVO.setRowChangeTimestamp("2025-08-13 10:00:00");
+    // OLD is null, NEW record has matching status
+    PersonForgotKeyVO oldVO = null;
+    PersonForgotKeyVO newVO = new PersonForgotKeyVO();
+    newVO.setForgotKeyStatusCode("ACTIVE");
+    newVO.setForgotKeyWorkflow("NewWorkflow");
+    newVO.setRowChangeTimestamp("2025-08-13 11:00:00");
 
-    PersonForgotKeyVO newVO = null;
     String[] statusArray = {"ACTIVE", "INACTIVE"};
 
     PersonsRequestData requestData = new PersonsRequestData();
