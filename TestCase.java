@@ -1,102 +1,83 @@
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import java.util.Arrays;
+import java.util.Collections;
+
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
-import java.util.*;
-import java.lang.reflect.Field;
-import java.util.Properties;
+class DeleteMessageProcessorTest {
 
-import org.apache.commons.lang3.StringUtils;
-import org.junit.jupiter.api.Test;
-import org.mockito.MockedStatic;
+    @Test
+    void testProcessMessage_IdMappingListWithClientIds() {
+        // Arrange
+        DeleteMessageProcessor processor = Mockito.spy(new DeleteMessageProcessor());
+        UsageLog mockUsageLog = mock(UsageLog.class);
+        ReflectionTestUtils.setField(processor, "usageLog", mockUsageLog);
 
-class KafkaConfigTest {
+        doReturn("mockResponse").when(processor).deletePerson(any(), any());
 
-    // Helper to set private fields using reflection
-    private void setField(Object target, String fieldName, Object value) throws Exception {
-        Field field = target.getClass().getDeclaredField(fieldName);
-        field.setAccessible(true);
-        field.set(target, value);
+        IdMapping mapping1 = mock(IdMapping.class);
+        when(mapping1.getNormalizedClientId()).thenReturn("clientA");
+
+        Delete delete = mock(Delete.class);
+        when(delete.getIdMapping()).thenReturn(Arrays.asList(mapping1));
+        when(delete.getGlobalPersonIdentifier()).thenReturn("udp123");
+
+        Body body = mock(Body.class);
+        when(body.getDelete()).thenReturn(delete);
+
+        // Act
+        processor.processMessage(body, "someKey");
+
+        // Assert
+        verify(processor).deletePerson(any(), any());
     }
 
     @Test
-    void testKafkaConfig_OuterIfOnly() throws Exception {
-        try (MockedStatic<DockerSecretsUtil> mockSecrets = mockStatic(DockerSecretsUtil.class)) {
-            mockSecrets.when(DockerSecretsUtil::load).thenReturn(new HashMap<>());
+    void testProcessMessage_IdMappingListIsNull() {
+        // Arrange
+        DeleteMessageProcessor processor = Mockito.spy(new DeleteMessageProcessor());
+        UsageLog mockUsageLog = mock(UsageLog.class);
+        ReflectionTestUtils.setField(processor, "usageLog", mockUsageLog);
 
-            MyKafkaClass kafka = new MyKafkaClass();
-            setField(kafka, "consumerBootstrapServers", "localhost:9092");
-            setField(kafka, "consumerSecurityProtocol", ""); // Will not hit 2nd if
+        Delete delete = mock(Delete.class);
+        when(delete.getIdMapping()).thenReturn(null);
+        when(delete.getGlobalPersonIdentifier()).thenReturn("udp456");
 
-            Properties props = kafka.kafkaConfig();
+        Body body = mock(Body.class);
+        when(body.getDelete()).thenReturn(delete);
 
-            assertEquals("localhost:9092", props.get("bootstrap.servers"));
-            assertFalse(props.containsKey("security.protocol"));
-        }
+        // Act
+        processor.processMessage(body, "key2");
+
+        // Assert
+        verify(processor, never()).deletePerson(any(), any());
     }
 
     @Test
-    void testKafkaConfig_OuterIf_SecondIfOnly() throws Exception {
-        try (MockedStatic<DockerSecretsUtil> mockSecrets = mockStatic(DockerSecretsUtil.class)) {
-            mockSecrets.when(DockerSecretsUtil::load).thenReturn(new HashMap<>());
+    void testProcessMessage_IdMappingListWithNullClientIds() {
+        // Arrange
+        DeleteMessageProcessor processor = Mockito.spy(new DeleteMessageProcessor());
+        UsageLog mockUsageLog = mock(UsageLog.class);
+        ReflectionTestUtils.setField(processor, "usageLog", mockUsageLog);
 
-            MyKafkaClass kafka = new MyKafkaClass();
-            setField(kafka, "consumerBootstrapServers", "localhost:9092");
-            setField(kafka, "consumerSecurityProtocol", "PLAINTEXT"); // Hits 2nd if but skips SSL/SASL
+        IdMapping mapping1 = mock(IdMapping.class);
+        when(mapping1.getNormalizedClientId()).thenReturn(null);
 
-            Properties props = kafka.kafkaConfig();
+        Delete delete = mock(Delete.class);
+        when(delete.getIdMapping()).thenReturn(Collections.singletonList(mapping1));
+        when(delete.getGlobalPersonIdentifier()).thenReturn("udp789");
 
-            assertEquals("PLAINTEXT", props.get("security.protocol"));
-            assertFalse(props.containsKey("ssl.truststore.location"));
-        }
-    }
+        Body body = mock(Body.class);
+        when(body.getDelete()).thenReturn(delete);
 
-    @Test
-    void testKafkaConfig_WithSSLOnly() throws Exception {
-        try (MockedStatic<DockerSecretsUtil> mockSecrets = mockStatic(DockerSecretsUtil.class)) {
-            Map<String, String> secrets = Map.of("truststorePass", "pass123");
-            mockSecrets.when(DockerSecretsUtil::load).thenReturn(secrets);
+        // Act
+        processor.processMessage(body, "key3");
 
-            MyKafkaClass kafka = new MyKafkaClass();
-            setField(kafka, "consumerBootstrapServers", "localhost:9092");
-            setField(kafka, "consumerSecurityProtocol", "SSL");
-            setField(kafka, "consumerSslTruststoreLocation", "/path/truststore.jks");
-            setField(kafka, "consumerSslTruststoreType", "JKS");
-            setField(kafka, "consumerSslTruststorePasswordSecret", "truststorePass");
-            setField(kafka, "consumerSaslMechanism", ""); // skip SASL
-
-            Properties props = kafka.kafkaConfig();
-
-            assertEquals("/path/truststore.jks", props.get("ssl.truststore.location"));
-            assertEquals("JKS", props.get("ssl.truststore.type"));
-            assertEquals("pass123", props.get("ssl.truststore.password"));
-            assertFalse(props.containsKey("sasl.mechanism"));
-        }
-    }
-
-    @Test
-    void testKafkaConfig_WithSSLAndSASL() throws Exception {
-        try (MockedStatic<DockerSecretsUtil> mockSecrets = mockStatic(DockerSecretsUtil.class)) {
-            Map<String, String> secrets = Map.of(
-                    "truststorePass", "pass123",
-                    "jaasUser", "user",
-                    "jaasPass", "pass"
-            );
-            mockSecrets.when(DockerSecretsUtil::load).thenReturn(secrets);
-
-            MyKafkaClass kafka = new MyKafkaClass();
-            setField(kafka, "consumerBootstrapServers", "localhost:9092");
-            setField(kafka, "consumerSecurityProtocol", "SASL_SSL");
-            setField(kafka, "consumerSslTruststoreLocation", "/path/truststore.jks");
-            setField(kafka, "consumerSslTruststoreType", "JKS");
-            setField(kafka, "consumerSslTruststorePasswordSecret", "truststorePass");
-            setField(kafka, "consumerSaslMechanism", "PLAIN");
-            setField(kafka, "consumerSaslJaasConfigUsernameSecret", "jaasUser");
-            setField(kafka, "consumerSaslJaasConfigPasswordSecret", "jaasPass");
-
-            Properties props = kafka.kafkaConfig();
-
-            assertEquals("PLAIN", props.get("sasl.mechanism"));
-            assertTrue(props.get("sasl.jaas.config").toString().contains("user"));
-        }
+        // Assert
+        verify(processor, never()).deletePerson(any(), any());
     }
 }
