@@ -1,14 +1,17 @@
 @Test
-void testCheckValidStatus_OldRecordStatusMatch_ProdProfile() throws Exception {
-    // Arrange
+void testCheckValidStatus_OldRecordStatusMatch_ProdProfile() {
     MergeMessageProcessor processor = new MergeMessageProcessor();
 
-    // Set required private fields so no NPE in mailSent()
+    // Set fields so no NPE for mail list and subject
     ReflectionTestUtils.setField(processor, "activeProfile", "prod");
     ReflectionTestUtils.setField(processor, "mergeStatusSubject", "Test Subject");
     ReflectionTestUtils.setField(processor, "sendMailList", "test@example.com");
 
-    // Create oldPersonForgotKeyVO with matching status code
+    // Mock the sendEmail dependency
+    EmailSender mockEmailSender = Mockito.mock(EmailSender.class);
+    ReflectionTestUtils.setField(processor, "sendEmail", mockEmailSender);
+
+    // Old record with matching status
     PersonForgotKeyVO oldVO = new PersonForgotKeyVO();
     oldVO.setForgotKeyStatusCode("ACTIVE");
     oldVO.setForgotKeyWorkflow("TestWorkflow");
@@ -23,19 +26,10 @@ void testCheckValidStatus_OldRecordStatusMatch_ProdProfile() throws Exception {
     requestData.setUdpid("newId");
     requestData.setNmlzclientid("newClient");
 
-    // Access the private method via reflection
-    Method method = MergeMessageProcessor.class.getDeclaredMethod(
-            "checkValidStatus",
-            PersonForgotKeyVO.class,
-            PersonForgotKeyVO.class,
-            String[].class,
-            PersonsRequestData.class
-    );
-    method.setAccessible(true);
-
     // Act
-    boolean result = (boolean) method.invoke(processor, oldVO, newVO, statusArray, requestData);
+    boolean result = processor.checkValidStatus(oldVO, newVO, statusArray, requestData);
 
     // Assert
-    assertTrue(result, "Expected checkValidStatus to return true when status matches for old record");
+    assertTrue(result);
+    verify(mockEmailSender, times(1)).sendMessage(any(Mail.class));
 }
