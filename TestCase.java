@@ -2,82 +2,67 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import java.util.Arrays;
-import java.util.Collections;
-
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 class DeleteMessageProcessorTest {
 
     @Test
-    void testProcessMessage_IdMappingListWithClientIds() {
+    void testDeleteRecords_FirstIfConditionTrue() {
         // Arrange
-        DeleteMessageProcessor processor = Mockito.spy(new DeleteMessageProcessor());
-        UsageLog mockUsageLog = mock(UsageLog.class);
-        ReflectionTestUtils.setField(processor, "usageLog", mockUsageLog);
+        DeleteMessageProcessor processor = new DeleteMessageProcessor();
 
-        doReturn("mockResponse").when(processor).deletePerson(any(), any());
+        // Mocks for DAOs
+        PersonUnlockDao mockUnlockDao = mock(PersonUnlockDao.class);
+        PersonFileDAO mockFileDao = mock(PersonFileDAO.class);
+        PersonForgetKeyDao mockForgetDao = mock(PersonForgetKeyDao.class);
+        PersonFormDAD mockFormDao = mock(PersonFormDAD.class);
+        PersonLocksDao mockLocksDao = mock(PersonLocksDao.class);
 
-        IdMapping mapping1 = mock(IdMapping.class);
-        when(mapping1.getNormalizedClientId()).thenReturn("clientA");
+        // Inject mocks
+        ReflectionTestUtils.setField(processor, "personUnlockDao", mockUnlockDao);
+        ReflectionTestUtils.setField(processor, "personFileDAO", mockFileDao);
+        ReflectionTestUtils.setField(processor, "personForgetKeyDao", mockForgetDao);
+        ReflectionTestUtils.setField(processor, "personFormDAD", mockFormDao);
+        ReflectionTestUtils.setField(processor, "personLocksDao", mockLocksDao);
 
-        Delete delete = mock(Delete.class);
-        when(delete.getIdMapping()).thenReturn(Arrays.asList(mapping1));
-        when(delete.getGlobalPersonIdentifier()).thenReturn("udp123");
+        // PersonLock input
+        PersonLockVO mockPersonLock = mock(PersonLockVO.class);
+        when(mockPersonLock.getPersonLockId()).thenReturn("lock123");
 
-        Body body = mock(Body.class);
-        when(body.getDelete()).thenReturn(delete);
+        // First IF condition returns true
+        when(mockUnlockDao.getPersonUnlockRecordBoolean("lock123")).thenReturn(true);
+
+        // Stub out DAO delete calls
+        when(mockUnlockDao.deletePersonUnlockRecord("lock123")).thenReturn(true);
 
         // Act
-        processor.processMessage(body, "someKey");
+        processor.deleteRecords(mockPersonLock);
 
         // Assert
-        verify(processor).deletePerson(any(), any());
+        verify(mockUnlockDao).getPersonUnlockRecordBoolean("lock123");
+        verify(mockUnlockDao).deletePersonUnlockRecord("lock123");
     }
 
     @Test
-    void testProcessMessage_IdMappingListIsNull() {
+    void testDeleteRecords_FirstIfConditionFalse() {
         // Arrange
-        DeleteMessageProcessor processor = Mockito.spy(new DeleteMessageProcessor());
-        UsageLog mockUsageLog = mock(UsageLog.class);
-        ReflectionTestUtils.setField(processor, "usageLog", mockUsageLog);
+        DeleteMessageProcessor processor = new DeleteMessageProcessor();
 
-        Delete delete = mock(Delete.class);
-        when(delete.getIdMapping()).thenReturn(null);
-        when(delete.getGlobalPersonIdentifier()).thenReturn("udp456");
+        PersonUnlockDao mockUnlockDao = mock(PersonUnlockDao.class);
+        ReflectionTestUtils.setField(processor, "personUnlockDao", mockUnlockDao);
 
-        Body body = mock(Body.class);
-        when(body.getDelete()).thenReturn(delete);
+        PersonLockVO mockPersonLock = mock(PersonLockVO.class);
+        when(mockPersonLock.getPersonLockId()).thenReturn("lock456");
+
+        // First IF returns false
+        when(mockUnlockDao.getPersonUnlockRecordBoolean("lock456")).thenReturn(false);
 
         // Act
-        processor.processMessage(body, "key2");
+        boolean result = processor.deleteRecords(mockPersonLock);
 
         // Assert
-        verify(processor, never()).deletePerson(any(), any());
-    }
-
-    @Test
-    void testProcessMessage_IdMappingListWithNullClientIds() {
-        // Arrange
-        DeleteMessageProcessor processor = Mockito.spy(new DeleteMessageProcessor());
-        UsageLog mockUsageLog = mock(UsageLog.class);
-        ReflectionTestUtils.setField(processor, "usageLog", mockUsageLog);
-
-        IdMapping mapping1 = mock(IdMapping.class);
-        when(mapping1.getNormalizedClientId()).thenReturn(null);
-
-        Delete delete = mock(Delete.class);
-        when(delete.getIdMapping()).thenReturn(Collections.singletonList(mapping1));
-        when(delete.getGlobalPersonIdentifier()).thenReturn("udp789");
-
-        Body body = mock(Body.class);
-        when(body.getDelete()).thenReturn(delete);
-
-        // Act
-        processor.processMessage(body, "key3");
-
-        // Assert
-        verify(processor, never()).deletePerson(any(), any());
+        verify(mockUnlockDao).getPersonUnlockRecordBoolean("lock456");
+        verify(mockUnlockDao, never()).deletePersonUnlockRecord(any());
+        org.junit.jupiter.api.Assertions.assertFalse(result);
     }
 }
