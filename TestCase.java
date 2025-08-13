@@ -1,38 +1,57 @@
-@Test
-public void testLogUsageEvent_WhenInfoEnabled() {
-    Logger mockLogger = mock(Logger.class);
-    when(mockLogger.isInfoEnabled()).thenReturn(true);
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+import org.slf4j.Logger;
 
-    UsageLog usageLogSpy = Mockito.spy(usageLog);
+import java.util.HashMap;
+import java.util.Map;
 
-    // Stub buildLogMapFromMDC to return a predictable map
-    Map<String, String> fakeMap = new HashMap<>();
-    doReturn(fakeMap).when(usageLogSpy)
-            .buildLogMapFromMDC(eq(mockLogger), any());
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
-    usageLogSpy.logUsageEvent(mockLogger, "myMethod", "myMessage");
+class UsageLogTest {
 
-    // Verify buildLogMapFromMDC was called
-    verify(usageLogSpy).buildLogMapFromMDC(eq(mockLogger), any());
+    @Test
+    void testLogUsageEvent_InfoEnabled() {
+        // Mock logger
+        Logger mockLogger = mock(Logger.class);
+        when(mockLogger.isInfoEnabled()).thenReturn(true);
 
-    // Verify logEvent() was called with INFO severity
-    verify(usageLogSpy).logEvent(eq(LogConstants.INFO_SEVERITY), eq(mockLogger), eq(fakeMap));
+        // Spy UsageLog so we can stub protected methods
+        UsageLog usageLogSpy = Mockito.spy(new UsageLog());
 
-    // Check map modifications
-    assertEquals("myMethod", fakeMap.get(LogAttributes.METHOD_ATTRIB));
-    assertEquals("myMessage", fakeMap.get(LogAttributes.MESSAGE_ATTRIB));
-}
+        // Stub the protected method buildLogMapFromMDC
+        Map<String, String> fakeMap = new HashMap<>();
+        doReturn(fakeMap).when(usageLogSpy)
+                .buildLogMapFromMDC(eq(mockLogger), any());
 
-@Test
-public void testLogUsageEvent_WhenInfoDisabled() {
-    Logger mockLogger = mock(Logger.class);
-    when(mockLogger.isInfoEnabled()).thenReturn(false);
+        // Stub logEvent (protected)
+        doNothing().when(usageLogSpy)
+                .logEvent(anyString(), eq(mockLogger), anyMap());
 
-    UsageLog usageLogSpy = Mockito.spy(usageLog);
+        // Call the method under test
+        usageLogSpy.logUsageEvent(mockLogger, "testMethod", "testMessage");
 
-    usageLogSpy.logUsageEvent(mockLogger, "myMethod", "myMessage");
+        // Verify the protected methods were called
+        verify(usageLogSpy).buildLogMapFromMDC(eq(mockLogger), any());
+        verify(usageLogSpy).logEvent(eq(LogConstants.INFO_SEVERITY), eq(mockLogger), eq(fakeMap));
 
-    // When info disabled, buildLogMapFromMDC and logEvent should never be called
-    verify(usageLogSpy, never()).buildLogMapFromMDC(any(), any());
-    verify(usageLogSpy, never()).logEvent(anyString(), any(), any());
+        // Verify map values were populated
+        assertEquals("testMethod", fakeMap.get(LogAttributes.METHOD_ATTRIB));
+        assertEquals("testMessage", fakeMap.get(LogAttributes.MESSAGE_ATTRIB));
+    }
+
+    @Test
+    void testLogUsageEvent_InfoDisabled() {
+        Logger mockLogger = mock(Logger.class);
+        when(mockLogger.isInfoEnabled()).thenReturn(false);
+
+        UsageLog usageLogSpy = Mockito.spy(new UsageLog());
+
+        usageLogSpy.logUsageEvent(mockLogger, "testMethod", "testMessage");
+
+        // Ensure protected methods are NOT called
+        verify(usageLogSpy, never()).buildLogMapFromMDC(any(), any());
+        verify(usageLogSpy, never()).logEvent(anyString(), any(), any());
+    }
 }
