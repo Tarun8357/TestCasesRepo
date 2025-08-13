@@ -1,33 +1,44 @@
 @Test
-void testDeleteRecords_FirstIfConditionFalse() {
+void testDeletePerson_ActiveProfileProdBranch() {
     // Arrange
     DeleteMessageProcessor processor = new DeleteMessageProcessor();
 
-    PersonUnlockDao mockUnlockDao = mock(PersonUnlockDao.class);
-    PersonFileDAO mockFileDao = mock(PersonFileDAO.class);
-    PersonForgetKeyDao mockForgetDao = mock(PersonForgetKeyDao.class);
-    PersonFormDAD mockFormDao = mock(PersonFormDAD.class);
+    // Mocks for dependencies
     PersonLocksDao mockLocksDao = mock(PersonLocksDao.class);
+    PersonForgetKeyDao mockForgetKeyDao = mock(PersonForgetKeyDao.class);
+    MergeMessageProcessor mockMergeProcessor = mock(MergeMessageProcessor.class);
 
-    // Inject mocks to avoid NPE in later if conditions
-    ReflectionTestUtils.setField(processor, "personUnlockDao", mockUnlockDao);
-    ReflectionTestUtils.setField(processor, "personFileDAO", mockFileDao);
-    ReflectionTestUtils.setField(processor, "personForgetKeyDao", mockForgetDao);
-    ReflectionTestUtils.setField(processor, "personFormDAD", mockFormDao);
+    // Inject mocks
     ReflectionTestUtils.setField(processor, "personLocksDao", mockLocksDao);
+    ReflectionTestUtils.setField(processor, "personForgetKeyDao", mockForgetKeyDao);
+    ReflectionTestUtils.setField(processor, "mergeMessageProcessor", mockMergeProcessor);
+    ReflectionTestUtils.setField(processor, "activeProfile", "prod");
 
-    // PersonLock input
-    PersonLockVO mockPersonLock = mock(PersonLockVO.class);
-    when(mockPersonLock.getPersonLockId()).thenReturn("lock123");
+    // Mock data for request
+    PersonsRequestData request = new PersonsRequestData();
+    request.setUdpid("udp123");
+    request.setNmlzclientid("client123");
 
-    // First if → false
-    when(mockUnlockDao.getPersonUnlockRecordBoolean("lock123")).thenReturn(false);
+    // Mock PersonLockVO
+    PersonLockVO mockLock = mock(PersonLockVO.class);
+    when(mockLock.getPersonLockId()).thenReturn("lock123");
+    when(mockLock.getUdpGlobalPersonId()).thenReturn("udpGID");
+    when(mockLock.getNormalizedClientId()).thenReturn("nmlzCID");
+    when(mockLocksDao.getPersonLock("udp123", "client123")).thenReturn(mockLock);
+
+    // Mock PersonForgotKeyVO
+    PersonForgotKeyVO mockForgotKey = mock(PersonForgotKeyVO.class);
+    when(mockForgotKey.getForgotKeyWorkflow()).thenReturn("workflow1");
+    when(mockForgotKey.getForgotKeyStatusCode()).thenReturn("status1");
+    when(mockForgotKey.getRowChangeTimestamp()).thenReturn("timestamp1");
+    when(mockForgetKeyDao.getPersonForgotKeyRecord("lock123")).thenReturn(mockForgotKey);
 
     // Act
-    boolean result = processor.deleteRecords(mockPersonLock);
+    String result = processor.deletePerson(request, "someKey");
 
     // Assert
-    assertFalse(result);
-    verify(mockUnlockDao).getPersonUnlockRecordBoolean("lock123");
-    verify(mockUnlockDao, never()).deletePersonUnlockRecord(any());
+    assertNotNull(result);
+    verify(mockLocksDao).getPersonLock("udp123", "client123");
+    verify(mockForgetKeyDao).getPersonForgotKeyRecord("lock123");
+    verify(mockMergeProcessor).mailSent(anyString(), anyString(), anyString());
 }
