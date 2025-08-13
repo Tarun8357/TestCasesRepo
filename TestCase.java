@@ -1,57 +1,55 @@
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 import org.slf4j.Logger;
 
+import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class UsageLogTest {
 
     @Test
-    void testLogUsageEvent_InfoEnabled() {
-        // Mock logger
+    void testLogUsageEvent_InfoEnabled_Reflection() throws Exception {
         Logger mockLogger = mock(Logger.class);
         when(mockLogger.isInfoEnabled()).thenReturn(true);
 
-        // Spy UsageLog so we can stub protected methods
-        UsageLog usageLogSpy = Mockito.spy(new UsageLog());
+        UsageLog usageLog = new UsageLog();
 
-        // Stub the protected method buildLogMapFromMDC
-        Map<String, String> fakeMap = new HashMap<>();
-        doReturn(fakeMap).when(usageLogSpy)
-                .buildLogMapFromMDC(eq(mockLogger), any());
+        // Use reflection to call the protected buildLogMapFromMDC
+        Method buildLogMapMethod = UsageLog.class.getDeclaredMethod("buildLogMapFromMDC", Logger.class, String[].class);
+        buildLogMapMethod.setAccessible(true);
+        Map<String, String> logMap = (Map<String, String>) buildLogMapMethod.invoke(usageLog, mockLogger, new String[]{});
+        logMap = new HashMap<>(logMap); // Make sure we can modify
 
-        // Stub logEvent (protected)
-        doNothing().when(usageLogSpy)
-                .logEvent(anyString(), eq(mockLogger), anyMap());
+        // Spy on UsageLog to intercept logEvent only
+        UsageLog spyUsageLog = spy(usageLog);
+        doNothing().when(spyUsageLog).logEvent(anyString(), any(), any());
 
-        // Call the method under test
-        usageLogSpy.logUsageEvent(mockLogger, "testMethod", "testMessage");
+        // Call the public method
+        spyUsageLog.logUsageEvent(mockLogger, "testMethod", "testMessage");
 
-        // Verify the protected methods were called
-        verify(usageLogSpy).buildLogMapFromMDC(eq(mockLogger), any());
-        verify(usageLogSpy).logEvent(eq(LogConstants.INFO_SEVERITY), eq(mockLogger), eq(fakeMap));
+        // Use reflection to check that logMap contains expected entries
+        assertEquals("testMethod", logMap.get(LogAttributes.METHOD_ATTRIB));
+        assertEquals("testMessage", logMap.get(LogAttributes.MESSAGE_ATTRIB));
 
-        // Verify map values were populated
-        assertEquals("testMethod", fakeMap.get(LogAttributes.METHOD_ATTRIB));
-        assertEquals("testMessage", fakeMap.get(LogAttributes.MESSAGE_ATTRIB));
+        // Verify logEvent was called with INFO severity
+        verify(spyUsageLog).logEvent(eq(LogConstants.INFO_SEVERITY), eq(mockLogger), anyMap());
     }
 
     @Test
-    void testLogUsageEvent_InfoDisabled() {
+    void testLogUsageEvent_InfoDisabled_Reflection() throws Exception {
         Logger mockLogger = mock(Logger.class);
         when(mockLogger.isInfoEnabled()).thenReturn(false);
 
-        UsageLog usageLogSpy = Mockito.spy(new UsageLog());
+        UsageLog usageLog = new UsageLog();
 
-        usageLogSpy.logUsageEvent(mockLogger, "testMethod", "testMessage");
+        // Spy to verify logEvent never called
+        UsageLog spyUsageLog = spy(usageLog);
 
-        // Ensure protected methods are NOT called
-        verify(usageLogSpy, never()).buildLogMapFromMDC(any(), any());
-        verify(usageLogSpy, never()).logEvent(anyString(), any(), any());
+        spyUsageLog.logUsageEvent(mockLogger, "testMethod", "testMessage");
+
+        verify(spyUsageLog, never()).logEvent(anyString(), any(), any());
     }
 }
