@@ -1,39 +1,39 @@
-@SuppressWarnings("unchecked")
-private boolean invokeCheckValidStatus(
-        MergeMessageProcessor processor,
-        PersonForgotKeyVO oldVO,
-        PersonForgotKeyVO newVO,
-        String[] status,
-        PersonsRequestData request
-) throws Exception {
-    Method method = MergeMessageProcessor.class.getDeclaredMethod(
-            "checkValidStatus",
-            PersonForgotKeyVO.class,
-            PersonForgotKeyVO.class,
-            String[].class,
-            PersonsRequestData.class
-    );
-    method.setAccessible(true);
-    return (boolean) method.invoke(processor, oldVO, newVO, status, request);
-}
-
-
 @Test
-void testCheckValidStatus_OldRecordActiveStatusProd() throws Exception {
+void testCheckValidStatus_anyMatchTrue() {
+    // Arrange
     MergeMessageProcessor processor = new MergeMessageProcessor();
+
+    // Inject required dependencies or fields
     ReflectionTestUtils.setField(processor, "activeProfile", "prod");
+    ReflectionTestUtils.setField(processor, "mailList", "test@example.com"); // avoid NPE in mailSent()
 
-    PersonForgotKeyVO oldVO = mock(PersonForgotKeyVO.class);
-    when(oldVO.getForgotKeyStatusCode()).thenReturn("ACTIVE");
-    when(oldVO.getForgotKeyWorkflow()).thenReturn("WF1");
-    when(oldVO.getRowChangeTimestamp()).thenReturn("2025-08-13");
+    PersonForgotKeyVO oldPerson = new PersonForgotKeyVO();
+    oldPerson.setForgotKeyStatusCode("ACTIVE"); // value to match
 
-    PersonsRequestData request = new PersonsRequestData();
-    request.setOldudpid("oldU");
-    request.setOldnmlzclientid("oldC");
-    request.setUdpid("newU");
-    request.setNmlzclientid("newC");
+    PersonsRequestData requestData = new PersonsRequestData();
+    requestData.setOldudpid("oldUdpid");
+    requestData.setOldnmlzclientid("oldClientId");
+    requestData.setUdpid("newUdpid");
+    requestData.setNmlzclientid("newClientId");
 
-    boolean result = invokeCheckValidStatus(processor, oldVO, null, new String[]{"ACTIVE"}, request);
-    assertTrue(result);
+    // status array that will match the oldPerson's status
+    String[] statusArray = {"active", "inactive"}; // 'active' matches 'ACTIVE' ignoring case
+
+    // Spy to avoid sending real mail
+    MergeMessageProcessor spyProcessor = Mockito.spy(processor);
+    doNothing().when(spyProcessor)
+               .mailSent(anyString(), anyString(), anyString(), anyString(), anyString());
+
+    // Act
+    boolean result = ReflectionTestUtils.invokeMethod(
+            spyProcessor,
+            "checkValidStatus",
+            oldPerson,
+            null,               // personForgotKeyVO = null
+            statusArray,
+            requestData
+    );
+
+    // Assert
+    assertTrue(result, "Expected isValid to be true when status matches");
 }
