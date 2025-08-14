@@ -2,103 +2,144 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.sql.Timestamp;
+
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.*;
 
-public class MergeMessageProcessorCheckValidStatusCoverageTest {
+public class MergeMessageProcessorFullTest {
 
-    private MergeMessageProcessor createScenario6Processor(
-            PersonForgotKeyVO oldForgot,
-            PersonForgotKeyVO newForgot
-    ) {
-        MergeMessageProcessor processor = Mockito.spy(new MergeMessageProcessor());
+    @Test
+    void testScenario4_NewIsNewer_isSuccessTrue() {
+        MergeMessageProcessor processor = new MergeMessageProcessor();
 
-        // Mock OLD and NEW locks: OLD newer than NEW
-        PersonLockVO oldLock = mock(PersonLockVO.class);
-        PersonLockVO newLock = mock(PersonLockVO.class);
-        when(oldLock.getRowChangeTimestamp()).thenReturn(2000L);
-        when(newLock.getRowChangeTimestamp()).thenReturn(1000L);
+        // Mock dependencies
+        PersonLocksDao personLocksDao = Mockito.mock(PersonLocksDao.class);
+        DeleteMessageProcessor deleteMessageProcessor = Mockito.mock(DeleteMessageProcessor.class);
+        ValidationUtil validationUtil = Mockito.mock(ValidationUtil.class);
+        PersonForgetKeyDao personForgetKeyDao = Mockito.mock(PersonForgetKeyDao.class);
 
-        // Return locks in correct sequence
-        doReturn(newLock)   // for getPersonLock(udpId, clientId) - NEW
-            .doReturn(oldLock) // for getPersonLock(oldUdpId, oldClientId) - OLD
-            .when(processor).getPersonLock(any(), any());
+        ReflectionTestUtils.setField(processor, "personLocksDao", personLocksDao);
+        ReflectionTestUtils.setField(processor, "deleteMessageProcessor", deleteMessageProcessor);
+        ReflectionTestUtils.setField(processor, "validationUtil", validationUtil);
+        ReflectionTestUtils.setField(processor, "personForgetKeyDao", personForgetKeyDao);
 
-        // ForgotKey records
-        doReturn(oldForgot).when(processor).getPersonForgotKeyRecord(oldLock.getPersonLockId());
-        doReturn(newForgot).when(processor).getPersonForgotKeyRecord(newLock.getPersonLockId());
+        // Locks
+        PersonLockVO oldLock = new PersonLockVO();
+        oldLock.setRowChangeTimestamp(Timestamp.valueOf("2023-01-01 10:00:00"));
 
-        // Mock insert/update/delete so Scenario 6 completes
-        doReturn(1).when(processor).insertPersonLockUsageAccountMerge(any(), any(), any());
-        doReturn(true).when(processor).updateLockDetails(any(), any());
-        doReturn(true).when(processor).deleteRecords(any());
+        PersonLockVO newLock = new PersonLockVO();
+        newLock.setRowChangeTimestamp(Timestamp.valueOf("2023-01-02 10:00:00"));
 
-        // Force prod profile
-        ReflectionTestUtils.setField(processor, "activeProfile", "prod");
+        Mockito.when(personLocksDao.getPersonLock(any(), any()))
+                .thenReturn(newLock) // 1st call
+                .thenReturn(oldLock); // 2nd call
 
-        return processor;
+        Mockito.when(validationUtil.insertUsageCode(any(), any(), any())).thenReturn(1);
+        Mockito.when(deleteMessageProcessor.deleteRecords(any())).thenReturn(true);
+
+        String result = processor.mergePerson(new PersonsRequestData(), "key");
+        assertEquals(Constants.OK, result);
     }
 
     @Test
-    void testScenario6_OldMatchStatus_Prod() {
+    void testScenario4_NewIsNewer_isSuccessFalse() {
+        MergeMessageProcessor processor = new MergeMessageProcessor();
+
+        PersonLocksDao personLocksDao = Mockito.mock(PersonLocksDao.class);
+        DeleteMessageProcessor deleteMessageProcessor = Mockito.mock(DeleteMessageProcessor.class);
+        ValidationUtil validationUtil = Mockito.mock(ValidationUtil.class);
+
+        ReflectionTestUtils.setField(processor, "personLocksDao", personLocksDao);
+        ReflectionTestUtils.setField(processor, "deleteMessageProcessor", deleteMessageProcessor);
+        ReflectionTestUtils.setField(processor, "validationUtil", validationUtil);
+
+        PersonLockVO oldLock = new PersonLockVO();
+        oldLock.setRowChangeTimestamp(Timestamp.valueOf("2023-01-01 10:00:00"));
+
+        PersonLockVO newLock = new PersonLockVO();
+        newLock.setRowChangeTimestamp(Timestamp.valueOf("2023-01-02 10:00:00"));
+
+        Mockito.when(personLocksDao.getPersonLock(any(), any()))
+                .thenReturn(newLock)
+                .thenReturn(oldLock);
+
+        Mockito.when(validationUtil.insertUsageCode(any(), any(), any())).thenReturn(0);
+        Mockito.when(deleteMessageProcessor.deleteRecords(any())).thenReturn(false);
+
+        String result = processor.mergePerson(new PersonsRequestData(), "key");
+        assertNotEquals(Constants.OK, result);
+    }
+
+    @Test
+    void testScenario6_OldIsNewer_ForgotKeyActive_isSuccessTrue() {
+        MergeMessageProcessor processor = new MergeMessageProcessor();
+
+        PersonLocksDao personLocksDao = Mockito.mock(PersonLocksDao.class);
+        DeleteMessageProcessor deleteMessageProcessor = Mockito.mock(DeleteMessageProcessor.class);
+        ValidationUtil validationUtil = Mockito.mock(ValidationUtil.class);
+        PersonForgetKeyDao personForgetKeyDao = Mockito.mock(PersonForgetKeyDao.class);
+
+        ReflectionTestUtils.setField(processor, "personLocksDao", personLocksDao);
+        ReflectionTestUtils.setField(processor, "deleteMessageProcessor", deleteMessageProcessor);
+        ReflectionTestUtils.setField(processor, "validationUtil", validationUtil);
+        ReflectionTestUtils.setField(processor, "personForgetKeyDao", personForgetKeyDao);
+        ReflectionTestUtils.setField(processor, "activeProfile", "prod");
+
+        PersonLockVO oldLock = new PersonLockVO();
+        oldLock.setPersonLockId(1);
+        oldLock.setRowChangeTimestamp(Timestamp.valueOf("2023-01-02 10:00:00"));
+
+        PersonLockVO newLock = new PersonLockVO();
+        newLock.setPersonLockId(2);
+        newLock.setRowChangeTimestamp(Timestamp.valueOf("2023-01-01 10:00:00"));
+
+        Mockito.when(personLocksDao.getPersonLock(any(), any()))
+                .thenReturn(newLock) // first call
+                .thenReturn(oldLock); // second call
+
         PersonForgotKeyVO oldForgot = new PersonForgotKeyVO();
         oldForgot.setForgotKeyStatusCode("ACTIVE");
 
-        MergeMessageProcessor processor = createScenario6Processor(oldForgot, null);
+        Mockito.when(personForgetKeyDao.getPersonForgotKeyRecord(eq(1))).thenReturn(oldForgot);
+        Mockito.when(personForgetKeyDao.getPersonForgotKeyRecord(eq(2))).thenReturn(null);
 
-        PersonsRequestData request = mock(PersonsRequestData.class);
-        String response = (String) ReflectionTestUtils.invokeMethod(processor, "mergePerson", request, "key");
+        Mockito.when(validationUtil.insertPersonLockUsageAccountMerge(any(), any(), any())).thenReturn(1);
+        Mockito.when(deleteMessageProcessor.deleteRecords(any())).thenReturn(true);
+        Mockito.when(processor.updateLockDetails(any(), any())).thenReturn(true);
 
-        assertTrue(response.contains("OK"));
+        String result = processor.mergePerson(new PersonsRequestData(), "key");
+        assertEquals(Constants.OK, result);
     }
 
     @Test
-    void testScenario6_OldNoMatchStatus_Prod() {
-        PersonForgotKeyVO oldForgot = new PersonForgotKeyVO();
-        oldForgot.setForgotKeyStatusCode("EXPIRED"); // not matching
+    void testScenario3_NoOldLock_AlreadyProcessed() {
+        MergeMessageProcessor processor = new MergeMessageProcessor();
 
-        MergeMessageProcessor processor = createScenario6Processor(oldForgot, null);
+        PersonLocksDao personLocksDao = Mockito.mock(PersonLocksDao.class);
+        ReflectionTestUtils.setField(processor, "personLocksDao", personLocksDao);
 
-        PersonsRequestData request = mock(PersonsRequestData.class);
-        String response = (String) ReflectionTestUtils.invokeMethod(processor, "mergePerson", request, "key");
+        PersonLockVO newLock = new PersonLockVO();
+        newLock.setRowChangeTimestamp(Timestamp.valueOf("2023-01-02 10:00:00"));
 
-        assertNotNull(response); // should still execute without errors
+        Mockito.when(personLocksDao.getPersonLock(any(), any()))
+                .thenReturn(null) // old lock
+                .thenReturn(newLock); // new lock
+
+        String result = processor.mergePerson(new PersonsRequestData(), "key");
+        assertEquals(Constants.ALREADY_PROCESSED, result);
     }
 
     @Test
-    void testScenario6_NewMatchStatus_Prod() {
-        PersonForgotKeyVO newForgot = new PersonForgotKeyVO();
-        newForgot.setForgotKeyStatusCode("ACTIVE");
+    void testNoLocks_ErrorMessageBranch() {
+        MergeMessageProcessor processor = new MergeMessageProcessor();
 
-        MergeMessageProcessor processor = createScenario6Processor(null, newForgot);
+        PersonLocksDao personLocksDao = Mockito.mock(PersonLocksDao.class);
+        ReflectionTestUtils.setField(processor, "personLocksDao", personLocksDao);
 
-        PersonsRequestData request = mock(PersonsRequestData.class);
-        String response = (String) ReflectionTestUtils.invokeMethod(processor, "mergePerson", request, "key");
+        Mockito.when(personLocksDao.getPersonLock(any(), any())).thenReturn(null);
 
-        assertTrue(response.contains("OK"));
-    }
-
-    @Test
-    void testScenario6_NewNoMatchStatus_Prod() {
-        PersonForgotKeyVO newForgot = new PersonForgotKeyVO();
-        newForgot.setForgotKeyStatusCode("CLOSED");
-
-        MergeMessageProcessor processor = createScenario6Processor(null, newForgot);
-
-        PersonsRequestData request = mock(PersonsRequestData.class);
-        String response = (String) ReflectionTestUtils.invokeMethod(processor, "mergePerson", request, "key");
-
-        assertNotNull(response);
-    }
-
-    @Test
-    void testScenario6_NoForgotKeyRecord() {
-        MergeMessageProcessor processor = createScenario6Processor(null, null);
-
-        PersonsRequestData request = mock(PersonsRequestData.class);
-        String response = (String) ReflectionTestUtils.invokeMethod(processor, "mergePerson", request, "key");
-
-        assertNotNull(response);
+        String result = processor.mergePerson(new PersonsRequestData(), "key");
+        assertEquals("Lock does not exists for old and new and history data also not found", result);
     }
 }
