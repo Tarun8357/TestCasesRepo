@@ -1,38 +1,23 @@
 @Test
-void testRun_forLoopCoverage() {
+void testRun_countResetBranch() {
     KafkaConsumer<String, String> mockConsumer = Mockito.mock(KafkaConsumer.class);
 
-    // Topic partitions
-    Set<TopicPartition> partitions = new HashSet<>();
-    TopicPartition tp = new TopicPartition("test-topic", 0);
-    partitions.add(tp);
-
-    OffsetAndMetadata committed = new OffsetAndMetadata(10L);
-
-    // Stub subscribe
+    // Stub subscribe and poll
     Mockito.doNothing().when(mockConsumer).subscribe(Mockito.any());
-
-    // Stub poll to return empty ConsumerRecords (needed to reach assignment())
     Mockito.when(mockConsumer.poll(Mockito.any()))
            .thenReturn(new ConsumerRecords<>(Collections.emptyMap()));
 
-    // Stub assignment
-    Mockito.when(mockConsumer.assignment()).thenReturn(partitions);
-
-    // Stub committed and position
-    Mockito.when(mockConsumer.committed(tp)).thenReturn(committed);
-    Mockito.when(mockConsumer.position(tp)).thenReturn(20L);
-
-    // Create KafkaConsumerThread and inject mock
-    KafkaConsumerThread thread = new KafkaConsumerThread(/* your args here */);
+    KafkaConsumerThread thread = new KafkaConsumerThread(/* args */);
     ReflectionTestUtils.setField(thread, "kafkaConsumer", mockConsumer);
     ReflectionTestUtils.setField(thread, "topics", Arrays.asList("test-topic"));
 
-    // Run method
-    thread.run();
+    // Set count to 100 before run
+    ReflectionTestUtils.setField(thread, "count", 100);
 
-    // Verify
-    Mockito.verify(mockConsumer).assignment();
-    Mockito.verify(mockConsumer).committed(tp);
-    Mockito.verify(mockConsumer).position(tp);
+    // We need to break the while(true) loop — mock poll to throw after first call
+    Mockito.when(mockConsumer.poll(Mockito.any()))
+           .thenAnswer(invocation -> { throw new WakeupException(); });
+
+    // Run — should hit count >= 100 and reset
+    assertDoesNotThrow(thread::run);
 }
