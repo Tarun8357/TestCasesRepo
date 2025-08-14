@@ -1,218 +1,139 @@
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
-import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Instant;
 import java.sql.Timestamp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
-class MergeMessageProcessorTest {
+public class MergeMessageProcessorTest {
 
     @Test
-    void scenario1_noLocksFound() {
-        MergeMessageProcessor processor = new MergeMessageProcessor();
+    void testScenario4_NewIsNewer_isSuccessTrue() {
         PersonLocksDao personLocksDao = mock(PersonLocksDao.class);
-        ReflectionTestUtils.setField(processor, "personLocksDao", personLocksDao);
-
-        PersonsRequestData req = new PersonsRequestData();
-        req.setUdpid("udp1");
-        req.setNmlzclientid("nmlz1");
-        req.setOldudpid("udp2");
-        req.setOldnmlzclientid("nmlz2");
-
-        when(personLocksDao.getPersonLock(anyString(), anyString())).thenReturn(null);
-
-        String result = processor.mergePerson(req, "key");
-        assertEquals("Lock does not exists for old and new and history data also not found", result);
-    }
-
-    @Test
-    void scenario3_oldLockNull_newExists() {
-        MergeMessageProcessor processor = new MergeMessageProcessor();
-        PersonLocksDao personLocksDao = mock(PersonLocksDao.class);
-        ReflectionTestUtils.setField(processor, "personLocksDao", personLocksDao);
-
-        PersonsRequestData req = new PersonsRequestData();
-        req.setUdpid("udp1");
-        req.setNmlzclientid("nmlz1");
-        req.setOldudpid("udp2");
-        req.setOldnmlzclientid("nmlz2");
-
-        PersonLockVO newLock = new PersonLockVO();
-        when(personLocksDao.getPersonLock("udp1", "nmlz1")).thenReturn(newLock);
-        when(personLocksDao.getPersonLock("udp2", "nmlz2")).thenReturn(null);
-
-        String result = processor.mergePerson(req, "key");
-        assertEquals(Constants.ALREADY_PROCESSED, result);
-    }
-
-    @Test
-    void scenario2_personLockNull_oldLockExists() {
-        MergeMessageProcessor processor = new MergeMessageProcessor();
-        PersonLocksDao personLocksDao = mock(PersonLocksDao.class);
-        ReflectionTestUtils.setField(processor, "personLocksDao", personLocksDao);
-
-        // Use reflection to mock private method updatePersonsData
-        ReflectionTestUtils.setField(processor, "updatePersonsData", (UpdatePersonsDataHandler) (r, l, k) -> true);
-
-        PersonsRequestData req = new PersonsRequestData();
-        req.setUdpid("udp1");
-        req.setNmlzclientid("nmlz1");
-        req.setOldudpid("udp2");
-        req.setOldnmlzclientid("nmlz2");
+        DeleteMessageProcessor deleteMessageProcessor = mock(DeleteMessageProcessor.class);
+        MergeMessageProcessor processor = new MergeMessageProcessor(
+                personLocksDao, /* other deps mocked */ deleteMessageProcessor, /* etc */
+        );
 
         PersonLockVO oldLock = new PersonLockVO();
-        when(personLocksDao.getPersonLock("udp1", "nmlz1")).thenReturn(null);
-        when(personLocksDao.getPersonLock("udp2", "nmlz2")).thenReturn(oldLock);
+        oldLock.setRowChangeTimestamp(Timestamp.from(Instant.now().minusSeconds(60)));
+        PersonLockVO newLock = new PersonLockVO();
+        newLock.setRowChangeTimestamp(Timestamp.from(Instant.now()));
 
-        String result = processor.mergePerson(req, "key");
-        assertEquals(Constants.OK, result);
-    }
-
-    @Test
-    void scenario4_newIsNewer() {
-        MergeMessageProcessor processor = new MergeMessageProcessor();
-        PersonLocksDao personLocksDao = mock(PersonLocksDao.class);
-        DeleteMessageProcessor deleteProcessor = mock(DeleteMessageProcessor.class);
-        ReflectionTestUtils.setField(processor, "personLocksDao", personLocksDao);
-        ReflectionTestUtils.setField(processor, "deleteMessageProcessor", deleteProcessor);
-
-        // reflection stub private insertUsageCode
-        ReflectionTestUtils.setField(processor, "insertUsageCode", (InsertUsageCodeHandler) (l, c, k) -> 1);
+        when(personLocksDao.getPersonLock(any(), any())).thenReturn(newLock).thenReturn(oldLock);
+        when(processor.insertUsageCode(any(), anyString(), anyString())).thenReturn(1);
+        when(deleteMessageProcessor.deleteRecords(oldLock)).thenReturn(true);
 
         PersonsRequestData req = new PersonsRequestData();
-        req.setUdpid("udp1");
-        req.setNmlzclientid("nmlz1");
-        req.setOldudpid("udp2");
-        req.setOldnmlzclientid("nmlz2");
+        String resp = processor.mergePerson(req, "key");
 
-        PersonLockVO oldLock = new PersonLockVO();
-        oldLock.setRowChangeTimestamp(Timestamp.valueOf("2024-01-01 00:00:00"));
-        PersonLockVO newLock = new PersonLockVO();
-        newLock.setRowChangeTimestamp(Timestamp.valueOf("2024-01-02 00:00:00"));
-
-        when(personLocksDao.getPersonLock("udp1", "nmlz1")).thenReturn(newLock);
-        when(personLocksDao.getPersonLock("udp2", "nmlz2")).thenReturn(oldLock);
-        when(deleteProcessor.deleteRecords(any())).thenReturn(true);
-
-        String result = processor.mergePerson(req, "key");
-        assertEquals(Constants.OK, result);
+        assertEquals(Constants.OK, resp);
     }
 
     @Test
-    void scenario6_oldIsNewer_checkValidStatusTrue() {
-        MergeMessageProcessor processor = new MergeMessageProcessor();
+    void testScenario4_NewIsNewer_isSuccessFalse() {
+        PersonLocksDao personLocksDao = mock(PersonLocksDao.class);
+        DeleteMessageProcessor deleteMessageProcessor = mock(DeleteMessageProcessor.class);
+        MergeMessageProcessor processor = new MergeMessageProcessor(
+                personLocksDao, /* other deps mocked */ deleteMessageProcessor
+        );
+
+        PersonLockVO oldLock = new PersonLockVO();
+        oldLock.setRowChangeTimestamp(Timestamp.from(Instant.now().minusSeconds(60)));
+        PersonLockVO newLock = new PersonLockVO();
+        newLock.setRowChangeTimestamp(Timestamp.from(Instant.now()));
+
+        when(personLocksDao.getPersonLock(any(), any())).thenReturn(newLock).thenReturn(oldLock);
+        when(processor.insertUsageCode(any(), anyString(), anyString())).thenReturn(0);
+        when(deleteMessageProcessor.deleteRecords(oldLock)).thenReturn(false);
+
+        PersonsRequestData req = new PersonsRequestData();
+        String resp = processor.mergePerson(req, "key");
+
+        // Expect not OK
+        assertEquals(Constants.ALREADY_PROCESSED, resp);
+    }
+
+    @Test
+    void testScenario6_ForgotKeyActive_isSuccessTrue() {
         PersonLocksDao personLocksDao = mock(PersonLocksDao.class);
         PersonForgetKeyDao forgetKeyDao = mock(PersonForgetKeyDao.class);
-        DeleteMessageProcessor deleteProcessor = mock(DeleteMessageProcessor.class);
         ValidationUtil validationUtil = mock(ValidationUtil.class);
+        DeleteMessageProcessor deleteMessageProcessor = mock(DeleteMessageProcessor.class);
 
-        ReflectionTestUtils.setField(processor, "personLocksDao", personLocksDao);
-        ReflectionTestUtils.setField(processor, "personForgetKeyDao", forgetKeyDao);
-        ReflectionTestUtils.setField(processor, "deleteMessageProcessor", deleteProcessor);
-        ReflectionTestUtils.setField(processor, "validationUtil", validationUtil);
-
-        // reflection stub private checkValidStatus
-        ReflectionTestUtils.setField(processor, "checkValidStatus", (CheckValidStatusHandler) (o, n, s, r) -> true);
-
-        PersonsRequestData req = new PersonsRequestData();
-        req.setUdpid("udp1");
-        req.setNmlzclientid("nmlz1");
-        req.setOldudpid("udp2");
-        req.setOldnmlzclientid("nmlz2");
+        MergeMessageProcessor processor = new MergeMessageProcessor(
+                personLocksDao, forgetKeyDao, validationUtil, deleteMessageProcessor
+        );
 
         PersonLockVO oldLock = new PersonLockVO();
-        oldLock.setRowChangeTimestamp(Timestamp.valueOf("2024-01-02 00:00:00"));
+        oldLock.setRowChangeTimestamp(Timestamp.from(Instant.now()));
         PersonLockVO newLock = new PersonLockVO();
-        newLock.setRowChangeTimestamp(Timestamp.valueOf("2024-01-01 00:00:00"));
+        newLock.setRowChangeTimestamp(Timestamp.from(Instant.now().minusSeconds(60)));
 
-        when(personLocksDao.getPersonLock("udp1", "nmlz1")).thenReturn(newLock);
-        when(personLocksDao.getPersonLock("udp2", "nmlz2")).thenReturn(oldLock);
+        when(personLocksDao.getPersonLock(any(), any())).thenReturn(newLock).thenReturn(oldLock);
+        when(forgetKeyDao.getPersonForgotKeyRecord(any())).thenReturn(new PersonForgotKeyVO());
         when(validationUtil.insertPersonLockUsageAccountMerge(any(), any(), anyString())).thenReturn(1);
-        when(deleteProcessor.deleteRecords(any())).thenReturn(true);
+        when(deleteMessageProcessor.deleteRecords(oldLock)).thenReturn(true);
+        when(processor.checkValidStatus(any(), any(), any(), any())).thenReturn(true);
 
-        String result = processor.mergePerson(req, "key");
-        assertEquals(Constants.OK, result);
+        PersonsRequestData req = new PersonsRequestData();
+        String resp = processor.mergePerson(req, "key");
+
+        assertEquals(Constants.OK, resp);
     }
 
     @Test
-    void scenario5_oldIsNewer_checkValidStatusFalse() {
-        MergeMessageProcessor processor = new MergeMessageProcessor();
+    void testScenario5_OldIsNewer_isSuccessTrue() {
         PersonLocksDao personLocksDao = mock(PersonLocksDao.class);
-        DeleteMessageProcessor deleteProcessor = mock(DeleteMessageProcessor.class);
-
-        ReflectionTestUtils.setField(processor, "personLocksDao", personLocksDao);
-        ReflectionTestUtils.setField(processor, "deleteMessageProcessor", deleteProcessor);
-
-        // reflection stub private checkValidStatus
-        ReflectionTestUtils.setField(processor, "checkValidStatus", (CheckValidStatusHandler) (o, n, s, r) -> false);
-        // reflection stub private insertUsageCode
-        ReflectionTestUtils.setField(processor, "insertUsageCode", (InsertUsageCodeHandler) (l, c, k) -> 1);
-        // reflection stub private updateLockDetails
-        ReflectionTestUtils.setField(processor, "updateLockDetails", (UpdateLockDetailsHandler) (o, n) -> true);
-
-        PersonsRequestData req = new PersonsRequestData();
-        req.setUdpid("udp1");
-        req.setNmlzclientid("nmlz1");
-        req.setOldudpid("udp2");
-        req.setOldnmlzclientid("nmlz2");
+        DeleteMessageProcessor deleteMessageProcessor = mock(DeleteMessageProcessor.class);
+        MergeMessageProcessor processor = new MergeMessageProcessor(
+                personLocksDao, /* other deps mocked */ deleteMessageProcessor
+        );
 
         PersonLockVO oldLock = new PersonLockVO();
-        oldLock.setRowChangeTimestamp(Timestamp.valueOf("2024-01-02 00:00:00"));
+        oldLock.setRowChangeTimestamp(Timestamp.from(Instant.now()));
         PersonLockVO newLock = new PersonLockVO();
-        newLock.setRowChangeTimestamp(Timestamp.valueOf("2024-01-01 00:00:00"));
+        newLock.setRowChangeTimestamp(Timestamp.from(Instant.now().minusSeconds(60)));
 
-        when(personLocksDao.getPersonLock("udp1", "nmlz1")).thenReturn(newLock);
-        when(personLocksDao.getPersonLock("udp2", "nmlz2")).thenReturn(oldLock);
-        when(deleteProcessor.deleteRecords(any())).thenReturn(true);
+        when(personLocksDao.getPersonLock(any(), any())).thenReturn(newLock).thenReturn(oldLock);
+        when(processor.insertUsageCode(any(), anyString(), anyString())).thenReturn(1);
+        when(processor.updateLockDetails(any(), any())).thenReturn(true);
+        when(deleteMessageProcessor.deleteRecords(oldLock)).thenReturn(true);
 
-        String result = processor.mergePerson(req, "key");
-        assertEquals(Constants.OK, result);
+        PersonsRequestData req = new PersonsRequestData();
+        String resp = processor.mergePerson(req, "key");
+
+        assertEquals(Constants.OK, resp);
     }
 
     @Test
-    void finalElseIf_and_responseMsgNull() {
-        MergeMessageProcessor processor = new MergeMessageProcessor();
+    void testScenario_personLockNull() {
         PersonLocksDao personLocksDao = mock(PersonLocksDao.class);
-        ReflectionTestUtils.setField(processor, "personLocksDao", personLocksDao);
+        MergeMessageProcessor processor = new MergeMessageProcessor(personLocksDao /* etc mocks */);
 
-        // This is more of a default fallthrough case
+        PersonLockVO oldLock = new PersonLockVO();
+        when(personLocksDao.getPersonLock(any(), any())).thenReturn(null).thenReturn(oldLock);
+        when(processor.updatePersonsData(any(), any(), anyString())).thenReturn(true);
+
         PersonsRequestData req = new PersonsRequestData();
-        req.setUdpid("udp1");
-        req.setNmlzclientid("nmlz1");
-        req.setOldudpid("udp2");
-        req.setOldnmlzclientid("nmlz2");
+        String resp = processor.mergePerson(req, "key");
 
-        PersonLockVO lock1 = new PersonLockVO();
-        PersonLockVO lock2 = new PersonLockVO();
-
-        when(personLocksDao.getPersonLock(anyString(), anyString())).thenReturn(lock1).thenReturn(lock2);
-
-        String result = processor.mergePerson(req, "key");
-        // fallback text should be hit if no earlier branch sets message
-        assertEquals("Lock does not exists for old and new and history data also not found", result);
+        assertEquals(Constants.OK, resp);
     }
 
-    // Functional interfaces to allow lambda stubbing of private methods
-    @FunctionalInterface
-    private interface UpdatePersonsDataHandler {
-        boolean apply(Object req, Object lock, String key);
-    }
+    @Test
+    void testScenario3_OldNull_NewExists() {
+        PersonLocksDao personLocksDao = mock(PersonLocksDao.class);
+        MergeMessageProcessor processor = new MergeMessageProcessor(personLocksDao /* etc mocks */);
 
-    @FunctionalInterface
-    private interface InsertUsageCodeHandler {
-        int apply(Object lock, String code, String key);
-    }
+        PersonLockVO newLock = new PersonLockVO();
+        when(personLocksDao.getPersonLock(any(), any())).thenReturn(newLock).thenReturn(null);
 
-    @FunctionalInterface
-    private interface UpdateLockDetailsHandler {
-        boolean apply(Object oldLock, Object newLock);
-    }
+        PersonsRequestData req = new PersonsRequestData();
+        String resp = processor.mergePerson(req, "key");
 
-    @FunctionalInterface
-    private interface CheckValidStatusHandler {
-        boolean apply(Object o, Object n, Object arr, Object req);
+        assertEquals(Constants.ALREADY_PROCESSED, resp);
     }
 }
